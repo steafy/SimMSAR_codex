@@ -13,8 +13,8 @@ source("estimate_MSAR.R")
 
 
 # Set parameter values
-Density <- c(0.75)
-min_edg_val <- 0.05
+Density <- c(0.25)
+min_edg_val <- 0.1
 max_edg_val <- 1
 M <- c(1,2,3,4)
 N <- c(4,6,10)
