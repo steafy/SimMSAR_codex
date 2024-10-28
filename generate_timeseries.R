@@ -25,7 +25,19 @@ library(progress)
 source("generate_netdyn.R")
 source("generate_transmat.R")
 
-generate_timeseries <- function(Density, N, M, T, n_ts, warmup, totTime, mean_rep, sd_rep, min_edg_val, max_edg_val) {
+generate_timeseries <- function(Density,
+                                N,
+                                M,
+                                T
+                                n_ts,
+                                warmup,
+                                totTime,
+                                mean_rep,
+                                sd_rep,
+                                min_edg_val,
+                                max_edg_val,
+                                min_kappa_edg_val,
+                                max_kappa_edg_val) {
   
   # Setup progressbar
   print("Generating networks", quote = FALSE)

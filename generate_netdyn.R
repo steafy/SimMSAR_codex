@@ -11,7 +11,7 @@ source("generate_kappa.R")
 source("check_stability.R")
 
 
-generate_netdyn <- function (N, Density, min_edg_val, max_edg_val){
+generate_netdyn <- function (N, Density, min_edg_val, max_edg_val, min_kappa_edg_val, max_kappa_edg_val){
 
   # Generate means for each regime
   mu <- runif(N, min = 0, max = 5)
