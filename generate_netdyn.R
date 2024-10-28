@@ -6,7 +6,7 @@ library(Matrix)
 
 # Load functions
 source("generate_random.R")
-source("generate_Beta_2.R")
+source("generate_Beta.R")
 source("generate_kappa.R")
 source("check_stability.R")
 
@@ -17,13 +17,13 @@ generate_netdyn <- function (N, Density, min_edg_val, max_edg_val){
   mu <- runif(N, min = 0, max = 5)
  
   ## Generate lag-1 regression matrix (Beta)
-  Beta_list <- generate_Beta_2(N, Density, min_edg_val, max_edg_val)
+  Beta_list <- generate_Beta(N, Density, min_edg_val, max_edg_val)
   Beta <- Beta_list$Beta
   
   
   ## Generate contemporaneous network dynamics
   # Make precision matrix kappa
-  kappa_list <- generate_kappa(N, Density, min_edg_val, max_edg_val)
+  kappa_list <- generate_kappa(N, Density, min_kappa_edg_val, max_kappa_edg_val)
 
   # Calculate sigma from kappa
   kappa <- kappa_list$kappa
