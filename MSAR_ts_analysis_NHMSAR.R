@@ -13,17 +13,17 @@ source("estimate_MSAR.R")
 
 
 # Set parameter values
-Density <- c(0.75)
+Density <- c(0.25, 0.5, 0.75)
 min_edg_val <- 0.1
 max_edg_val <- 1
 min_kappa_edg_val <- 1
 max_kappa_edg_val <- 1
-M <- c(1)
-N <- c(6,10)
+M <- c(1,2,3,4)
+N <- c(4,6,10)
 # mean_rep <- 10 # for Rseq
 # sd_rep <- 3    # for Rseq
-n_ts <- 10
-T <- c(3000)
+n_ts <- 30
+T <- c(100,200,500,1500,2000,2500,3000,3500)
 warmup <- 50
 totTime <- T + warmup
 order <- 1
@@ -51,6 +51,8 @@ print(paste("fit parms:", app_parms), quote = FALSE)
 Timeseries_data <- generate_timeseries(Density = Density,
                                        min_edg_val = min_edg_val,
                                        max_edg_val = max_edg_val,
+                                       min_kappa_edg_val = min_kappa_edg_val,
+                                       max_kappa_edg_val = max_kappa_edg_val,
                                        M = M, 
                                        N = N, 
                                        sd_rep = sd_rep, 
