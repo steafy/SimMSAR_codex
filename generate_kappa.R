@@ -13,7 +13,7 @@ chosen_indices <- indices[, sample(ncol(indices), num_elements, replace = FALSE)
 for (index in 1:num_elements) {
   row <- chosen_indices[1, index]
   col <- chosen_indices[2, index]
-  value <- generate_random(1, 1)
+  value <- generate_random(min_kappa_edg_val, max_kappa_edg_val)
   kappa[row, col] <- value
   kappa[col, row] <- value
 }
