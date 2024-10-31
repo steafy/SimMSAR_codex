@@ -13,11 +13,9 @@ source("estimate_MSAR.R")
 
 
 # Set parameter values
-Density <- c(0.25, 0.5, 0.75)
-min_edg_val <- 0.1
+Density <- c(0.5)
+min_edg_val <- 0.05
 max_edg_val <- 1
-min_kappa_edg_val <- 1
-max_kappa_edg_val <- 1
 M <- c(1,2,3,4)
 N <- c(4,6,10)
 # mean_rep <- 10 # for Rseq
@@ -51,8 +49,6 @@ print(paste("fit parms:", app_parms), quote = FALSE)
 Timeseries_data <- generate_timeseries(Density = Density,
                                        min_edg_val = min_edg_val,
                                        max_edg_val = max_edg_val,
-                                       min_kappa_edg_val = min_kappa_edg_val,
-                                       max_kappa_edg_val = max_kappa_edg_val,
                                        M = M, 
                                        N = N, 
                                        sd_rep = sd_rep, 
@@ -76,3 +72,7 @@ MSAR_dynamics_list <- estimate_MSAR(Density = Density,
                                     min_edg_val = min_edg_val,
                                     Timeseries_data
                                     )
+
+
+saveRDS(Timeseries_data, "Timeseries_", Density, ".rds")
+saveRDS(MSAR_models, "MSAR_models_", Density,  ".rds")

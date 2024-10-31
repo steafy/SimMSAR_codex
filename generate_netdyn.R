@@ -11,7 +11,7 @@ source("generate_kappa.R")
 source("check_stability.R")
 
 
-generate_netdyn <- function (N, Density, min_edg_val, max_edg_val, min_kappa_edg_val, max_kappa_edg_val){
+generate_netdyn <- function (N, Density, min_edg_val, max_edg_val){
 
   # Generate means for each regime
   mu <- runif(N, min = 0, max = 5)
@@ -23,7 +23,7 @@ generate_netdyn <- function (N, Density, min_edg_val, max_edg_val, min_kappa_edg
   
   ## Generate contemporaneous network dynamics
   # Make precision matrix kappa
-  kappa_list <- generate_kappa(N, Density, min_kappa_edg_val, max_kappa_edg_val)
+  kappa_list <- generate_kappa(N, Density, min_edg_val, max_edg_val)
 
   # Calculate sigma from kappa
   kappa <- kappa_list$kappa

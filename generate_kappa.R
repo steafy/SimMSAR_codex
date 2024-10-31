@@ -1,6 +1,6 @@
 # Function to generate precision matrix (kappa)
 
-generate_kappa <- function(N, Density, min_kappa_edg_val, max_kappa_edg_val) {
+generate_kappa <- function(N, Density, min_edg_val, max_edg_val) {
 kappa <- matrix(0, nrow = N, ncol = N)
 
 # Set number of non null elements of kappa
@@ -13,7 +13,7 @@ chosen_indices <- indices[, sample(ncol(indices), num_elements, replace = FALSE)
 for (index in 1:num_elements) {
   row <- chosen_indices[1, index]
   col <- chosen_indices[2, index]
-  value <- generate_random(min_kappa_edg_val, max_kappa_edg_val)
+  value <- generate_random(min_edg_val, max_edg_val)
   kappa[row, col] <- value
   kappa[col, row] <- value
 }

@@ -35,9 +35,8 @@ generate_timeseries <- function(Density,
                                 mean_rep,
                                 sd_rep,
                                 min_edg_val,
-                                max_edg_val,
-                                min_kappa_edg_val,
-                                max_kappa_edg_val) {
+                                max_edg_val
+                                ) {
   
   # Setup progressbar
   print("Generating networks", quote = FALSE)
@@ -62,7 +61,7 @@ generate_timeseries <- function(Density,
           dyn_level5 <- list()
           for (m in 1:M[l]) {
             repeat {
-              W <- generate_netdyn(N[j], Density[i], min_edg_val, max_edg_val, min_kappa_edg_val, max_kappa_edg_val)
+              W <- generate_netdyn(N[j], Density[i], min_edg_val, max_edg_val)
               if (all(abs(W[["Wtemp"]][W[["Wtemp"]] != 0]) >= min_edg_val) &&
                   all(abs(W[["Wcont"]][W[["Wcont"]] != 0]) >= min_edg_val) &&
                   any(W[["Wcont"]] != 0)) {
