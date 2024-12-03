@@ -13,11 +13,11 @@ source("estimate_MSAR.R")
 
 
 # Set parameter values
-Density <- c(0.5)
-min_edg_val <- 0.05
+Density <- c(0.25, 0.5, 0.75)
+min_edg_val <- 0.1
 max_edg_val <- 1
-M <- c(1,2,3,4)
-N <- c(4,6,10)
+M <- c(1, 2, 3, 4)
+N <- c(4, 6, 8)
 # mean_rep <- 10 # for Rseq
 # sd_rep <- 3    # for Rseq
 n_ts <- 30
@@ -74,5 +74,6 @@ MSAR_dynamics_list <- estimate_MSAR(Density = Density,
                                     )
 
 
-saveRDS(Timeseries_data, "Timeseries_", Density, ".rds")
-saveRDS(MSAR_models, "MSAR_models_", Density,  ".rds")
+saveRDS(Timeseries_data, "Timeseries_data.rds")
+
+saveRDS(MSAR_dynamics_list, "MSAR_models.rds")
