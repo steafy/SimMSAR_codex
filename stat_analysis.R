@@ -1,49 +1,5 @@
 ### Data preparation
 
-## Extract stats data from MSAR results list to dataframe
-data_list <- list()
-MSAR_results <- list()
-
-for (t in names(MSAR_models)) {
-  for (density in names(MSAR_models[[t]])) {
-    for (nodes in names(MSAR_models[[t]][[density]])) {
-      for (regimes in names(MSAR_models[[t]][[density]][[nodes]])) {
-        stats <- MSAR_models[[t]][[density]][[nodes]][[regimes]][["Stats"]]
-        temp <- data.frame(
-          Timesteps = as.numeric(gsub("_Timesteps", "", t)),
-          Density = as.numeric(gsub("%", "", gsub("Density_", "", density))),
-          Nodes = as.numeric(gsub("_Nodes", "", nodes)),
-          Regimes = MSAR_results$Regimes <- as.numeric(gsub("_Regimes", "", regimes)),
-          N = stats$Wtemp_corr$N,
-          Wtemp_corr_mean = stats$Wtemp_corr$Mean,
-          Wtemp_corr_sd = stats$Wtemp_corr$Sd,
-          Wtemp_ac_corr_mean = stats$Wtemp_ac_corr$Mean,
-          Wtemp_ac_corr_sd = stats$Wtemp_ac_corr$Sd,
-          Wcont_corr_mean = stats$Wcont_corr$Mean,
-          Wcont_corr_sd = stats$Wcont_corr$Sd,
-          Wcont_ac_corr_mean = stats$Wcont_ac_corr$Mean,
-          Wcont_ac_corr_sd = stats$Wcont_ac_corr$Sd
-        )
-        data_list <- append(data_list, list(temp))
-      }
-    }
-  }
-}
-
-# Combine all dataframes in list in one dataframe
-MSAR_results <- do.call(rbind, data_list)
-
-# Omit na values
-MSAR_results <- na.omit(MSAR_results)
-MSAR_results$N <- MSAR_results$N / MSAR_results$Regimes
-
-# Transform to factors
-MSAR_results$Timesteps <- as.factor(MSAR_results$Timesteps)
-MSAR_results$Density <- as.factor(MSAR_results$Density)
-MSAR_results$Nodes <- as.factor(MSAR_results$Nodes)
-MSAR_results$Regimes <- as.factor(MSAR_results$Regimes)
-
-
 ## Extract stats data from MSAR results list
 corr_list <- list()
 
@@ -62,6 +18,7 @@ for (t in seq_along(T)) {
               Density = Density[density],
               Nodes = N[nodes],
               Regimes = M[regimes],
+              N = length(models),
               Wtemp_corr = result[["corr. Wtemp"]],
               Wtemp_ac_corr = result[["corr. Wtemp ac"]],
               Wcont_corr = result[["corr. Wcont"]],
@@ -82,13 +39,26 @@ corr_results <- do.call(rbind, corr_list)
 # Remove NA
 corr_results <- na.omit(corr_results)
 
+# Transform to factors
+corr_results <- corr_results %>%
+  mutate(
+    Timesteps = factor(Timesteps),
+    Density = factor(Density),
+    Nodes = factor(Nodes),
+    Regimes = factor(Regimes)
+  )
+
 
 ####################################################################
 ### Calculate statistical information for estimation process
 
 ## Determine no. of omissions (ts without converging model) (30 - N)
-omissions <- 9720 - sum(MSAR_results$N)
-omissions_per <- 1 - (sum(MSAR_results$N) / 9720)
+aggr_factors <- corr_results %>%
+  dplyr::select(Timesteps, Density, Nodes, Regimes, N) %>%
+  dplyr::distinct()
+
+omissions <- 9720 - sum(aggr_factors$N)
+omissions_per <- 1 - sum(aggr_factors$N) / 9720
 
 
 ## Calculate mean no. of estimated models (N) for factorlevels
@@ -97,10 +67,10 @@ library(dunn.test)
 n_means <- list()
 dunn_results <- list()
 for (i in 1:4) {
-  var <- colnames(MSAR_results)[i]
-  val <- unique(MSAR_results[[var]])
-  kw <- kruskal.test(MSAR_results$N, MSAR_results[[var]])
-  dunn <- dunn.test(MSAR_results$N, MSAR_results[[var]], method = "bonferroni")
+  var <- colnames(aggr_factors)[i]
+  val <- unique(aggr_factors[[var]])
+  kw <- kruskal.test(aggr_factors$N, aggr_factors[[var]])
+  dunn <- dunn.test(aggr_factors$N, aggr_factors[[var]], method = "bonferroni")
   dunn_matrix <- data.frame(
     comp = dunn$comparisons,
     Z_val = dunn$Z,
@@ -114,7 +84,7 @@ for (i in 1:4) {
    )
   for (j in seq_along(val)) {
     x <- val[j]
-    subset <- MSAR_results %>% filter(.data[[var]] == x)
+    subset <- aggr_factors %>% filter(.data[[var]] == x)
     n_means[[paste(x, var)]] <- mean(subset$N)
   }
 }
