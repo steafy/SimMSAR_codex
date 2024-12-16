@@ -259,38 +259,37 @@ library(ggplot2)
 library(dplyr)
 library(cowplot)
 
-# Daten zusammenfassen
+# Summarize data
 summary_data <- corr_results %>%
   group_by(Timesteps, Density, Nodes, Regimes) %>%
   summarise(mean_Wtemp_corr = mean(Wtemp_corr, na.rm = TRUE),
             sd_Wtemp_corr = sd(Wtemp_corr, na.rm = TRUE))
 
-# HoverInfo-Spalte erstellen
+# Make hover info
 summary_data <- summary_data %>% mutate(HoverInfo = paste("Timesteps:", Timesteps,
                                                           "<br>Nodes:", Nodes,
                                                           "<br>Mean:", round(mean_Wtemp_corr, 2),
                                                           "<br>Sd:", round(sd_Wtemp_corr, 2)
 ))
 
-# Position für versetzte Punkte
+# Position for shifted plots
 dodge <- position_dodge(width = 0.5)
 
-# Basisplot erstellen
 Wtemp_plot <- ggplot() +
-  # Einzelwerte als Scatterplot
+  # Singular values as scatterplot
   geom_jitter(data = corr_results,
               aes(x = Timesteps, y = Wtemp_corr, color = Nodes),
               position = dodge, alpha = 0.2, size = 0.1) +
-  # Aggregierte Daten als Linie und Punkte
+  # Aggregated data as line plots
   geom_line(data = summary_data,
             aes(x = as.numeric(Timesteps), y = mean_Wtemp_corr, color = Nodes, group = Nodes),
             position = dodge) +
   geom_point(data = summary_data,
              aes(x = as.numeric(Timesteps), y = mean_Wtemp_corr, color = Nodes, text = HoverInfo),
              position = dodge, size = 1) +
-  # Facetierung
+  # Faceting
   facet_grid(Density ~ Regimes, labeller = label_value) +
-  # Labels und Design
+  # Labels and design
   labs(title = "Wtemp mean correlations",
        x = "Timesteps",
        y = "Mean correlations",
@@ -310,32 +309,32 @@ Wtemp_plot <- ggplot() +
     panel.spacing = unit(0.2, "in")
   )
 
-# Zusätzliche Labels erstellen
+# Additional labels
 label_x_right <- ggplot() +
   theme_void() +
   annotate("text", x = 0.5, y = 0.5, label = "Density", angle = -90, size = 4, hjust = 0)
 
 label_y_top <- ggplot() +
   theme_void() +
-  xlim(0, 1) +       # Definiere den horizontalen Bereich
-  ylim(0, 1) +       # Definiere den vertikalen Bereich
+  xlim(0, 1) +       # Define horizontal area
+  ylim(0, 1) +       # Define vertical area
   annotate("text", x = 0.4725, y = 0.5, label = "Regimes", size = 4, hjust = 0.5)
 
 
-# Kombination der Plots mit `cowplot`
+# Combine plots with `cowplot`
 final_plot <- ggdraw() +
-  draw_plot(Wtemp_plot, 0, 0, 1, 1) +                      # Hauptplot
-  draw_plot(label_x_right, 0.96, 0.08, 0.03, 0.8) +        # X-Beschriftung rechts
-  draw_plot(label_y_top, 0.1, 0.875, 0.84, 0.05)            # Y-Beschriftung oben
+  draw_plot(Wtemp_plot, 0, 0, 1, 1) +                      # Main plot
+  draw_plot(label_x_right, 0.96, 0.08, 0.03, 0.8) +        # x-label right
+  draw_plot(label_y_top, 0.1, 0.875, 0.84, 0.05)           # y-label above
 
-# Speichern als PDF
+# Store
 ggsave(filename = "Plots/Wtemp_plot_with_labels.pdf",
        plot = final_plot,
-       width = 10,       # Breite des Plots
-       height = 8,       # Höhe des Plots
+       width = 10,       
+       height = 8,       
        units = "in",
-       dpi = 600         # Auflösung in DPI
-)
+       dpi = 600
+       )
 
 
 
