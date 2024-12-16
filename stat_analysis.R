@@ -1,81 +1,63 @@
+### Data preparation
 
+## Extract stats data from MSAR results list to dataframe
+data_list <- list()
+MSAR_results <- list()
 
-t_mean <- list()
-for (i in seq_along(T)) {
-  timesteps <- T[i]
-  t_subset <- MSAR_results %>% filter(Timesteps == timesteps)
-  t_mean[[paste0(timesteps, "_Timesteps")]] <- mean(t_subset$N)
-}
-
-t_kruskal <- kruskal.test(N ~ Timesteps, MSAR_results)
-d_kruskal <- kruskal.test(N ~ Density, MSAR_results)
-n_kruskal <- kruskal.test(N ~ Nodes, MSAR_results)
-
-
-library(dunn.test)
-MSAR_results$Timesteps <- as.factor(MSAR_results$Timesteps)
-t_dunn <- dunn.test(MSAR_results$N, MSAR_results$Timesteps, method = "bonferroni")
-
-MSAR_results$Nodes <- as.factor(MSAR_results$Nodes)
-d_dunn <- dunn.test(MSAR_results$N, MSAR_results$Nodes, method = "bonferroni")
-n_dunn <- dunn.test(N ~ Nodes, MSAR_results, method = "bonferroni")
-
-
-
-corr_list <- list()
-corr_results <- list()
-
-# Extract stats data from MSAR results list
-for (t in seq_along(T)) {
-  for (density in seq_along(Density)) {
-    for (nodes in seq_along(N)) {
-      for (regimes in seq_along(M)) {
-        for (ts in 1:length(MSAR_models[[t]][[density]][[nodes]][[regimes]][["MSAR_models"]])) {
-          for (r in 1:regimes) {
-          result <- MSAR_models[[t]][[density]][[nodes]][[regimes]][["MSAR_models"]][[ts]][[r]]
-          temp <- data.frame(
-          Timesteps = T[t],
-          Density = Density[density],
-          Nodes = N[nodes],
-          Regimes = M[regimes],
-          Wtemp_corr = result[["corr. Wtemp"]],
-          Wtemp_ac_corr = result[["corr. Wtemp ac"]],
-          Wcont_corr = result[["corr. Wcont"]],
-          result[["corr. Wcont ac"]]
+for (t in names(MSAR_models)) {
+  for (density in names(MSAR_models[[t]])) {
+    for (nodes in names(MSAR_models[[t]][[density]])) {
+      for (regimes in names(MSAR_models[[t]][[density]][[nodes]])) {
+        stats <- MSAR_models[[t]][[density]][[nodes]][[regimes]][["Stats"]]
+        temp <- data.frame(
+          Timesteps = as.numeric(gsub("_Timesteps", "", t)),
+          Density = as.numeric(gsub("%", "", gsub("Density_", "", density))),
+          Nodes = as.numeric(gsub("_Nodes", "", nodes)),
+          Regimes = MSAR_results$Regimes <- as.numeric(gsub("_Regimes", "", regimes)),
+          N = stats$Wtemp_corr$N,
+          Wtemp_corr_mean = stats$Wtemp_corr$Mean,
+          Wtemp_corr_sd = stats$Wtemp_corr$Sd,
+          Wtemp_ac_corr_mean = stats$Wtemp_ac_corr$Mean,
+          Wtemp_ac_corr_sd = stats$Wtemp_ac_corr$Sd,
+          Wcont_corr_mean = stats$Wcont_corr$Mean,
+          Wcont_corr_sd = stats$Wcont_corr$Sd,
+          Wcont_ac_corr_mean = stats$Wcont_ac_corr$Mean,
+          Wcont_ac_corr_sd = stats$Wcont_ac_corr$Sd
         )
-        corr_list <- append(corr_list, list(temp))
-          }
-        }
+        data_list <- append(data_list, list(temp))
       }
     }
   }
 }
 
 # Combine all dataframes in list in one dataframe
-corr_results <- do.call(rbind, corr_list)
+MSAR_results <- do.call(rbind, data_list)
 
 # Omit na values
-corr_results <- na.omit(corr_results)
+MSAR_results <- na.omit(MSAR_results)
+MSAR_results$N <- MSAR_results$N / MSAR_results$Regimes
+
+# Transform to factors
+MSAR_results$Timesteps <- as.factor(MSAR_results$Timesteps)
+MSAR_results$Density <- as.factor(MSAR_results$Density)
+MSAR_results$Nodes <- as.factor(MSAR_results$Nodes)
+MSAR_results$Regimes <- as.factor(MSAR_results$Regimes)
 
 
-
-####################################
+## Extract stats data from MSAR results list
 corr_list <- list()
 
-# Extract stats data from MSAR results list
 for (t in seq_along(T)) {
   for (density in seq_along(Density)) {
     for (nodes in seq_along(N)) {
       for (regimes in seq_along(M)) {
-        # Fetch models
-        models <- MSAR_models[[t]][[density]][[nodes]][[regimes]][["MSAR_models"]]
+           models <- MSAR_models[[t]][[density]][[nodes]][[regimes]][["MSAR_models"]]
         
         for (ts in seq_along(models)) {
           for (r in seq_along(models[[ts]])) {
             result <- models[[ts]][[r]]
             
-            # Create dataframe for current parameters
-            temp <- data.frame(
+              temp <- data.frame(
               Timesteps = T[t],
               Density = Density[density],
               Nodes = N[nodes],
@@ -86,7 +68,6 @@ for (t in seq_along(T)) {
               Wcont_ac_corr = result[["corr. Wcont ac"]]
             )
             
-            # Add dataframe to list
             corr_list <- append(corr_list, list(temp))
           }
         }
@@ -100,11 +81,49 @@ corr_results <- do.call(rbind, corr_list)
 
 # Remove NA
 corr_results <- na.omit(corr_results)
+
+
+####################################################################
+### Calculate statistical information for estimation process
+
+## Determine no. of omissions (ts without converging model) (30 - N)
+omissions <- 9720 - sum(MSAR_results$N)
+omissions_per <- 1 - (sum(MSAR_results$N) / 9720)
+
+
+## Calculate mean no. of estimated models (N) for factorlevels
+## Calculate dunn-test to compare N across factorlevels 
+library(dunn.test)
+n_means <- list()
+dunn_results <- list()
+for (i in 1:4) {
+  var <- colnames(MSAR_results)[i]
+  val <- unique(MSAR_results[[var]])
+  kw <- kruskal.test(MSAR_results$N, MSAR_results[[var]])
+  dunn <- dunn.test(MSAR_results$N, MSAR_results[[var]], method = "bonferroni")
+  dunn_matrix <- data.frame(
+    comp = dunn$comparisons,
+    Z_val = dunn$Z,
+    p_val = dunn$P,
+    p.adj = round(dunn$P.adjusted, 4)
+    )
+  dunn_matrix <- dunn_matrix[order(dunn_matrix$p.adj), ]
+  dunn_results[[var]] <- list(
+    Kruskal = kw,
+    Dunn = dunn_matrix
+   )
+  for (j in seq_along(val)) {
+    x <- val[j]
+    subset <- MSAR_results %>% filter(.data[[var]] == x)
+    n_means[[paste(x, var)]] <- mean(subset$N)
+  }
+}
+
+
 ###############################################
+### Calculate inferential statistics to describe models
 
-
-
-
+## Calculate ANOVA
 ANOVA <- aov(Wtemp_corr ~ Timesteps * Density * Nodes * Regimes, corr_results)
 residuals <- residuals(ANOVA)
 shapiro.test(residuals)
@@ -125,14 +144,14 @@ corr_results$Nodes <- as.factor(corr_results$Nodes)
 corr_results$Regimes <- as.factor(corr_results$Regimes)
 
 
-
-# Robuste ANOVA mit trimmed means
+## Calculate robust ANOVA with trimmed means
 library(ARTool)
 Wtemp_art <- art(Wtemp_corr ~ Timesteps * Density * Nodes * Regimes, data = corr_results)
 anova_results <- anova(Wtemp_art)
 print(anova_results)
-##########################################
 
+
+## Calculate PERMANOVA
 library(lmPerm)
 
 # Specify dependent and independent variables
@@ -193,9 +212,6 @@ for (dep_var in names(permanova_results)) {
 }
 
 
-
-
-
 ##########################################
 library(ggplot2)
 library(dplyr)
@@ -237,7 +253,7 @@ ggsave(filename = "Plots/Wtemp_plot.svg",
 
 
 #######################################
-
+### Make lineplot panels for each variable 
 
 library(ggplot2)
 library(dplyr)
