@@ -1,5 +1,5 @@
 ### Data preparation
-
+library(dplyr)
 ## Extract stats data from MSAR results list
 corr_list <- list()
 
@@ -7,7 +7,7 @@ for (t in seq_along(T)) {
    for (density in seq_along(Density)) {
     for (nodes in seq_along(N)) {
       for (regimes in seq_along(M)) {
-           models <- MSAR_models[[t]][[density]][[nodes]][[regimes]][["MSAR_models"]]
+        models <- MSAR_models[[t]][[density]][[nodes]][[regimes]][["MSAR_models"]]
         for (ts in seq_along(models)) {
           for (r in seq_along(models[[ts]])) {
             result <- models[[ts]][[r]]
@@ -23,6 +23,7 @@ for (t in seq_along(T)) {
               Wcont_ac_corr = result[["corr. Wcont ac"]]
             )
             corr_list <- append(corr_list, list(temp))
+           
           }
         }
       }
@@ -76,10 +77,10 @@ for (current_name in names) {
   
   # Construct dataframe
   df_temp <- data.frame(
-    T       = numeric(0),
-    Density = numeric(0),
-    N       = numeric(0),
-    M       = numeric(0),
+    Timesteps = numeric(0),
+    Density   = numeric(0),
+    Nodes     = numeric(0),
+    Regimes   = numeric(0),
     Value   = numeric(0),
     stringsAsFactors = FALSE
   )
@@ -97,10 +98,10 @@ for (current_name in names) {
     val_df <- as.data.frame(as.list(val), stringsAsFactors = FALSE)
     
     row_df <- data.frame(
-      T       = all_combos$T[i],
-      Density = all_combos$Density[i],
-      N       = all_combos$N[i],
-      M       = all_combos$M[i],
+      Timesteps = all_combos$T[i],
+      Density   = all_combos$Density[i],
+      Nodes     = all_combos$N[i],
+      Regims    = all_combos$M[i],
       stringsAsFactors = FALSE
     )
     
@@ -152,6 +153,40 @@ for (i in 1:4) {
     subset <- aggr_factors %>% filter(.data[[var]] == x)
     n_means[[paste(x, var)]] <- mean(subset$N)
   }
+}
+
+
+###############################################
+### Calculate descriptive statistics
+
+desc <- as.data.frame(matrix(nrow = 5, ncol = 10,
+                             dimnames = list(c("Mean", "Sd", "Median", "Min", "Max"),
+                                             c("Wtemp_corr",
+                                               "Wtemp_MAE",
+                                               "Wtemp_sensitivity",
+                                               "Wtemp_specificity",
+                                               "Wtemp_ac_corr",
+                                               "Wcont_corr",
+                                               "Wcont_MAE",
+                                               "Wcont_sensitivity",
+                                               "Wcont_specificity",
+                                               "Wcont_ac_corr")
+                                             )
+                             )
+                      )
+
+
+for (i in 1:10) {
+  means <- c()
+  for (j in 6:8) {
+    x <- mean(descript_stats[[i]][[j]])
+    means <- c(means, x)
+    val <- c(means,
+             min(descript_stats[[i]][["Min"]]),
+             max(descript_stats[[i]][["Max"]])
+             )
+  }
+  desc[ ,i] <- val
 }
 
 
@@ -235,37 +270,37 @@ for (dep_var in names(permanova_results)) {
 
 
 ##########################################
-library(ggplot2)
-library(dplyr)
-
-# Daten zusammenfassen
-summary_data <- corr_results %>%
-  group_by(Timesteps, Density, Nodes, Regimes) %>%
-  summarise(mean_Wtemp_corr = mean(Wtemp_corr, na.rm = TRUE))
-
-# Plot erstellen
-Wtemp_plot <- ggplot(summary_data, aes(x = Timesteps, y = mean_Wtemp_corr, color = Nodes, group = Nodes)) +
-  geom_line() +
-  geom_point() +
-  facet_grid(Density ~ Regimes, labeller = label_both) +
-  labs(title = "Wtemp mean correlations",
-       x = "Timesteps",
-       y = "Mean correlations",
-       color = "Nodes") +
-  theme_minimal() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1)  # X-Achsenbeschriftungen schräg darstellen
-  )
-
-Wtemp_plotly <- ggplotly(Wtemp_plot)
-htmlwidgets::saveWidget(Wtemp_plotly, "Plots/Wtemp_plot.html")
-
-ggsave(filename = "Plots/Wtemp_plot.svg",
-       plot = Wtemp_plot,
-       width = 30,        # Breite des Plots
-       height = 22.5,       # Höhe des Plots
-       units = "cm"       # Einheit der Abmessungen
-)
+# library(ggplot2)
+# library(dplyr)
+# 
+# # Daten zusammenfassen
+# summary_data <- corr_results %>%
+#   group_by(Timesteps, Density, Nodes, Regimes) %>%
+#   summarise(mean_Wtemp_corr = mean(Wtemp_corr, na.rm = TRUE))
+# 
+# # Plot erstellen
+# Wtemp_plot <- ggplot(summary_data, aes(x = Timesteps, y = mean_Wtemp_corr, color = Nodes, group = Nodes)) +
+#   geom_line() +
+#   geom_point() +
+#   facet_grid(Density ~ Regimes, labeller = label_both) +
+#   labs(title = "Wtemp mean correlations",
+#        x = "Timesteps",
+#        y = "Mean correlations",
+#        color = "Nodes") +
+#   theme_minimal() +
+#   theme(
+#     axis.text.x = element_text(angle = 45, hjust = 1)  # X-Achsenbeschriftungen schräg darstellen
+#   )
+# 
+# Wtemp_plotly <- ggplotly(Wtemp_plot)
+# htmlwidgets::saveWidget(Wtemp_plotly, "Plots/Wtemp_plot.html")
+# 
+# ggsave(filename = "Plots/Wtemp_plot.svg",
+#        plot = Wtemp_plot,
+#        width = 30,        # Breite des Plots
+#        height = 22.5,       # Höhe des Plots
+#        units = "cm"       # Einheit der Abmessungen
+# )
 
 
 
@@ -290,11 +325,11 @@ for (col_name in cols) {
     "Wcont_ac_corr"   = "Mean correlations for Wcont average controllability",
   )
   
-    # Summarize data
+  # Summarize data
   summary_data <- corr_results %>%
     group_by(Timesteps, Density, Nodes, Regimes) %>%
     summarise(
-      mean_val = mean(.data[[col_name]], na.rm = TRUE),
+      mean_val = weighted.mean(.data[[col_name]], w = N, na.rm = TRUE),
       sd_val   = sd(.data[[col_name]], na.rm = TRUE),
       .groups  = "drop"
     )
@@ -368,7 +403,7 @@ for (col_name in cols) {
     draw_plot(label_x_right, 0.96, 0.08, 0.03, 0.8) +
     draw_plot(label_y_top,   0.1,  0.875, 0.84, 0.05)
   
-  # Store
+  # Store plot
   output_file <- paste0("Plots/", col_name, "_plot_with_labels.pdf")
   
   ggsave(
@@ -382,10 +417,6 @@ for (col_name in cols) {
   
   message("Gespeichert: ", output_file)
 }
-
-
-
-
 
 
 
