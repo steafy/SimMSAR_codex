@@ -269,42 +269,6 @@ for (dep_var in names(permanova_results)) {
 }
 
 
-##########################################
-# library(ggplot2)
-# library(dplyr)
-# 
-# # Daten zusammenfassen
-# summary_data <- corr_results %>%
-#   group_by(Timesteps, Density, Nodes, Regimes) %>%
-#   summarise(mean_Wtemp_corr = mean(Wtemp_corr, na.rm = TRUE))
-# 
-# # Plot erstellen
-# Wtemp_plot <- ggplot(summary_data, aes(x = Timesteps, y = mean_Wtemp_corr, color = Nodes, group = Nodes)) +
-#   geom_line() +
-#   geom_point() +
-#   facet_grid(Density ~ Regimes, labeller = label_both) +
-#   labs(title = "Wtemp mean correlations",
-#        x = "Timesteps",
-#        y = "Mean correlations",
-#        color = "Nodes") +
-#   theme_minimal() +
-#   theme(
-#     axis.text.x = element_text(angle = 45, hjust = 1)  # X-Achsenbeschriftungen schräg darstellen
-#   )
-# 
-# Wtemp_plotly <- ggplotly(Wtemp_plot)
-# htmlwidgets::saveWidget(Wtemp_plotly, "Plots/Wtemp_plot.html")
-# 
-# ggsave(filename = "Plots/Wtemp_plot.svg",
-#        plot = Wtemp_plot,
-#        width = 30,        # Breite des Plots
-#        height = 22.5,       # Höhe des Plots
-#        units = "cm"       # Einheit der Abmessungen
-# )
-
-
-
-
 #######################################
 ### Make lineplot panels for each variable 
 

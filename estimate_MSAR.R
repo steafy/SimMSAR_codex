@@ -148,7 +148,8 @@ for (t in seq_along(T)) {
             for(n in 1:N[j]) {
               for(o in 1:N[j]) { # raus: if(n != o) {
                 # if(n != o) {
-                est_Wtemp[n, o] <- est_Beta[n, o] / sqrt(est_sigma[i, i] %*% est_kappa[j ,j] + est_Beta[i, j]^2)
+                #est_Wtemp[n, o] <- est_Beta[n, o] / sqrt(est_sigma[i, i] %*% est_kappa[j ,j] + est_Beta[i, j]^2)
+                est_Wtemp[n, o] <- est_Beta[n, o] / sqrt(est_sigma[n, n] %*% est_kappa[o, o] + est_Beta[n, o]^2)
                 est_Wtemps[[paste0("Regime", m)]] <- est_Wtemp
                 # }
               }
@@ -180,7 +181,7 @@ for (t in seq_along(T)) {
           }
           
           # Extract estimated Wtemp
-          get_est_Wtemp  <- function(model_fit) {
+          get_est_Wtemp  <- function(model_fit) {  # vorher function(model_fit)
             vectors <- list()
             for (regime in names(est_Wtemps)) {
               vec_name <- paste(regime, "Wtemp", sep = "_")
