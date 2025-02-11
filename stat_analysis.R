@@ -38,14 +38,37 @@ corr_results <- do.call(rbind, corr_list)
 # Remove NA
 corr_results <- na.omit(corr_results)
 
-# Transform to factors
+# # Transform to factors
+# corr_results <- corr_results %>%
+#   mutate(
+#     Timesteps = factor(Timesteps),
+#     Density = factor(Density),
+#     Nodes = factor(Nodes),
+#     Regimes = factor(Regimes)
+#   )
+
+
+
+
+# Hier nehmen wir an, dass die Spalte "Regimes" den in der Simulation gesetzten Gesamtwert angibt.
+# Daraus können wir ableiten, wie viele Regime pro Simulationslauf erwartet werden.
+# Wir gehen davon aus, dass in jeder Bedingung (definiert durch Timesteps, Density, Nodes, Regimes)
+# die Anzahl der Zeilen ein Vielfaches der Anzahl der Regime ist.
 corr_results <- corr_results %>%
+  group_by(Timesteps, Density, Nodes, Regimes) %>%
   mutate(
-    Timesteps = factor(Timesteps),
-    Density = factor(Density),
-    Nodes = factor(Nodes),
-    Regimes = factor(Regimes)
-  )
+    SimID = rep(seq_len(ceiling(n() / first(as.numeric(as.character(Regimes))))),
+                each = first(as.numeric(as.character(Regimes))), length.out = n()),
+    RegimeIndex = rep(seq_len(first(as.numeric(as.character(Regimes)))), length.out = n())
+  ) %>%
+  ungroup() %>%
+  mutate(Condition = interaction(Timesteps, Density, Nodes, Regimes, drop = TRUE)) %>%
+  # Reihenfolge der Spalten anpassen: SimID als erste, RegimeIndex direkt nach Regimes
+  select(SimID, Timesteps, Density, Nodes, Regimes, RegimeIndex, everything())
+
+
+
+
 
 
 ## Extract stats from MSAR_models
@@ -267,6 +290,23 @@ for (dep_var in names(permanova_results)) {
   cat("\nResults for dependent variable:", dep_var, "\n")
   print(permanova_results[[dep_var]])
 }
+
+
+### Calculate a liear mixed model
+library(lme4)
+library(lmerTest)  # Liefert p-Werte im Summary
+
+# Erstellen eines Mixed Models:
+# - Feste Effekte: Die experimentellen Faktoren und deren Interaktionen,
+#   plus der RegimeIndex (als fester Effekt, um systematische Unterschiede zwischen den Regimen innerhalb eines Simulationslaufs zu modellieren).
+# - Zufälliger Effekt: Wir modellieren einen zufälligen Interzept für jeden Simulationslauf (SimID), verschachtelt in Condition.
+model_wtemp <- lmer(Wtemp_corr ~ Timesteps * Density * Nodes * Regimes + RegimeIndex +
+                      (1 | Condition/SimID),
+                    data = corr_results)
+
+# Zusammenfassung des Modells
+summary(model_wtemp)
+
 
 
 #######################################

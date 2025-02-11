@@ -35,7 +35,9 @@ generate_timeseries <- function(Density,
                                 mean_rep,
                                 sd_rep,
                                 min_edg_val,
-                                max_edg_val
+                                max_edg_val,
+                                remain_lower,
+                                remain_upper
                                 ) {
   
   # Setup progressbar
@@ -134,7 +136,7 @@ generate_timeseries <- function(Density,
             
             ## Generate TS from Transmat
             # Generate transmat
-            transmat <- generate_transmat(M[k])
+            transmat <- generate_transmat(M[k], remain_lower, remain_upper)
 
             # Initialize state matrix
             X <- matrix(init, nrow = totTime[t], ncol = N[j])

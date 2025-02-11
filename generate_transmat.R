@@ -1,12 +1,12 @@
 # Function to generate transmat
 
-generate_transmat <- function(M) {
+generate_transmat <- function(M, remain_lower, remain_upper) {
   # Initialize transmat 
   transmat <- matrix(0, nrow = M, ncol = M)
   
   for (i in 1:M) {
     # Set probabilities to remain in current regime
-    remain_val <- runif(1, 0.92, 0.95)
+    remain_val <- runif(1, remain_lower, remain_upper)
     transmat[i, i] <- remain_val
     
     # Set probabilities for regime switching in next timestep

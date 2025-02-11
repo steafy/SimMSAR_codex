@@ -13,18 +13,20 @@ source("estimate_MSAR.R")
 
 
 # Set parameter values
-Density <- c(0.25, 0.5, 0.75)
-min_edg_val <- 0.1
-max_edg_val <- 1
-M <- c(1, 2, 3, 4)
-N <- c(4, 6, 8)
+Density <- c(0.25)  # Set network density
+min_edg_val <- 0.05           # Set min. edge value
+max_edg_val <- 1               # Set max edge value
+M <- c(2)             # Set number of regimes
+N <- c(4)                # Set number of nodes
 # mean_rep <- 10 # for Rseq
 # sd_rep <- 3    # for Rseq
-n_ts <- 30
-T <- c(100,200,500,1000,1500,2000,2500,3000,3500)
-warmup <- 50
+n_ts <- 30                     # Set number of timeseries for each combination of factors
+T <- c(3500) # Set number of time steps
+warmup <- 50                   # Set number of time steps to warm up (bein omitted)
+remain_lower <- 0.33            # Set lower bound for probability to stay in regime (0.92)
+remain_upper <- 0.66            # Set upper bound for probability to stay in regime (0.95)
 totTime <- T + warmup
-order <- 1
+order <- 1                     # Set lag of autoregression
 MaxIter <- 200 ### !!!
 verbose <- FALSE
 # seed <- 83742
@@ -56,7 +58,9 @@ Timeseries_data <- generate_timeseries(Density = Density,
                                        warmup = warmup,
                                        T = T,
                                        totTime = totTime,
-                                       n_ts = n_ts
+                                       n_ts = n_ts,
+                                       remain_lower = remain_lower,
+                                       remain_upper = remain_upper
                                        )
 
 
@@ -74,6 +78,6 @@ MSAR_dynamics_list <- estimate_MSAR(Density = Density,
                                     )
 
 
-saveRDS(Timeseries_data, "Timeseries_data.rds")
+#saveRDS(Timeseries_data, "Timeseries_data.rds")
 
-saveRDS(MSAR_dynamics_list, "MSAR_models.rds")
+#saveRDS(MSAR_dynamics_list, "MSAR_models.rds")
