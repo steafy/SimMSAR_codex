@@ -38,22 +38,7 @@ corr_results <- do.call(rbind, corr_list)
 # Remove NA
 corr_results <- na.omit(corr_results)
 
-# # Transform to factors
-# corr_results <- corr_results %>%
-#   mutate(
-#     Timesteps = factor(Timesteps),
-#     Density = factor(Density),
-#     Nodes = factor(Nodes),
-#     Regimes = factor(Regimes)
-#   )
-
-
-
-
-# Hier nehmen wir an, dass die Spalte "Regimes" den in der Simulation gesetzten Gesamtwert angibt.
-# Daraus können wir ableiten, wie viele Regime pro Simulationslauf erwartet werden.
-# Wir gehen davon aus, dass in jeder Bedingung (definiert durch Timesteps, Density, Nodes, Regimes)
-# die Anzahl der Zeilen ein Vielfaches der Anzahl der Regime ist.
+# Group regimes from one timeseries together, add SimID
 corr_results <- corr_results %>%
   group_by(Timesteps, Density, Nodes, Regimes) %>%
   mutate(
@@ -66,8 +51,14 @@ corr_results <- corr_results %>%
   # Reihenfolge der Spalten anpassen: SimID als erste, RegimeIndex direkt nach Regimes
   select(SimID, Timesteps, Density, Nodes, Regimes, RegimeIndex, everything())
 
-
-
+# Transform to factors
+corr_results <- corr_results %>%
+  mutate(
+    Timesteps = factor(Timesteps),
+    Density = factor(Density),
+    Nodes = factor(Nodes),
+    Regimes = factor(Regimes)
+  )
 
 
 
@@ -124,7 +115,7 @@ for (current_name in names) {
       Timesteps = all_combos$T[i],
       Density   = all_combos$Density[i],
       Nodes     = all_combos$N[i],
-      Regims    = all_combos$M[i],
+      Regimes    = all_combos$M[i],
       stringsAsFactors = FALSE
     )
     
@@ -219,7 +210,6 @@ for (i in 1:10) {
 ## Calculate ANOVA
 ANOVA <- aov(Wtemp_corr ~ Timesteps * Density * Nodes * Regimes, corr_results)
 residuals <- residuals(ANOVA)
-#shapiro.test(residuals)
 
 qqnorm(residuals)
 qqline(residuals, col = "red")
@@ -243,8 +233,8 @@ print(anova_results)
 library(lmPerm)
 
 # Specify dependent and independent variables
-dependent_vars <- colnames(corr_results)[6:9]
-independent_vars <- colnames(corr_results)[1:4]
+dependent_vars <- colnames(corr_results)[8:11]
+independent_vars <- colnames(corr_results)[2:5]
 
 permanova_results <- list()
 
@@ -292,21 +282,55 @@ for (dep_var in names(permanova_results)) {
 }
 
 
-### Calculate a liear mixed model
-library(lme4)
-library(lmerTest)  # Liefert p-Werte im Summary
 
-# Erstellen eines Mixed Models:
-# - Feste Effekte: Die experimentellen Faktoren und deren Interaktionen,
-#   plus der RegimeIndex (als fester Effekt, um systematische Unterschiede zwischen den Regimen innerhalb eines Simulationslaufs zu modellieren).
-# - Zufälliger Effekt: Wir modellieren einen zufälligen Interzept für jeden Simulationslauf (SimID), verschachtelt in Condition.
-model_wtemp <- lmer(Wtemp_corr ~ Timesteps * Density * Nodes * Regimes + RegimeIndex +
+###################################
+library(lme4)
+library(lmerTest)
+library(sjPlot)     
+library(effects)
+
+### Calculate a linear mixed model
+# Specify model
+model_Wtemp <- lmer(Wtemp_corr ~ Timesteps * Density * Nodes * Regimes + RegimeIndex +
                       (1 | Condition/SimID),
                     data = corr_results)
 
-# Zusammenfassung des Modells
-summary(model_wtemp)
+# Summarize model
+Wtemp_lmm <- as.data.frame(coef(summary(model_Wtemp))) %>% 
+  dplyr:mutate(Signif = ifelse(`Pr(>|t|)` < 0.001, "***",
+                               ifelse(`Pr(>|t|)` < 0.01, "**",
+                                      ifelse(`Pr(>|t|)` < 0.05, "*", ""))))
 
+
+
+### Calculate scaled linear mixed model
+# Scale factors
+corr_results <- corr_results %>%
+  mutate(
+    Timesteps_scaled = scale(as.numeric(as.character(Timesteps))),
+    Density_scaled   = scale(as.numeric(as.character(Density))),
+    Nodes_scaled     = scale(as.numeric(as.character(Nodes))),
+    Regimes_scaled   = scale(as.numeric(as.character(Regimes)))
+  )
+
+# Specify model
+model_Wtemp_scaled <- lmer(Wtemp_corr ~ Timesteps_scaled * Density_scaled * Nodes_scaled * Regimes_scaled + RegimeIndex +
+                             (1 | Condition/SimID),
+                           data = corr_results)
+
+# Summarize model
+Wtemp_lmm_scaled <- as.data.frame(coef(summary(model_Wtemp_scaled))) %>%
+  dplyr::mutate(Signif = ifelse(`Pr(>|t|)` < 0.001, "***",
+                                ifelse(`Pr(>|t|)` < 0.01, "**",
+                                       ifelse(`Pr(>|t|)` < 0.05, "*", ""))))
+
+# 1. Koeffizientenplot (zeigt feste Effekte und Interaktionen inkl. Konfidenzintervalle)
+plot_model(model_Wtemp_scaled, type = "est", show.values = TRUE, 
+           title = "Koeffizienten des LMM für Wtemp_corr")
+
+# 2. Prädiktor-Effektplot: Darstellung der prädiktiven Effekte der Prädiktoren und ihrer Interaktionen.
+plot_model(model_Wtemp_scaled, type = "pred", terms = c("Timesteps_scaled", "Density_scaled", "Nodes_scaled", "Regimes_scaled"),
+           title = "Prädiktive Effekte: Timesteps, Density, Nodes und Regimes auf Wtemp_corr")
 
 
 #######################################
@@ -317,7 +341,7 @@ library(dplyr)
 library(cowplot)
 
 # Set variables to plot
-cols <- colnames(corr_results)[6:9]
+cols <- colnames(corr_results)[8:11]
 
 for (col_name in cols) {
   
@@ -333,11 +357,11 @@ for (col_name in cols) {
   summary_data <- corr_results %>%
     group_by(Timesteps, Density, Nodes, Regimes) %>%
     summarise(
-      mean_val = weighted.mean(.data[[col_name]], w = N, na.rm = TRUE),
+      mean_val = mean(.data[[col_name]], na.rm = TRUE),
       sd_val   = sd(.data[[col_name]], na.rm = TRUE),
       .groups  = "drop"
     )
-  
+
   # Make hover info
   summary_data <- summary_data %>%
     mutate(HoverInfo = paste("Timesteps:", Timesteps,
@@ -421,6 +445,5 @@ for (col_name in cols) {
   
   message("Gespeichert: ", output_file)
 }
-
 
 
