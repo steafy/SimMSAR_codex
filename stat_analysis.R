@@ -138,7 +138,7 @@ aggr_factors <- corr_results %>%
   dplyr::distinct()
 
 omissions <- 9720 - sum(aggr_factors$N)
-omissions_per <- 1 - sum(aggr_factors$N) / 9720
+omissions_per <- (omissions / 9720) * 100
 
 
 ## Calculate mean no. of estimated models (N) for factorlevels
@@ -307,13 +307,10 @@ linear_mixed_models <- list()
 for (col_name in cols) {
 
 # Specify model
-fmla <- as.formula(
-  paste0(col_name, " ~ Timesteps_scaled *
-         Density_scaled * Nodes_scaled *
-         Regimes_scaled +
-         RegimeIndex +
-         (1 | Condition/SimID)")
-  )
+fmla <- as.formula(paste0(col_name, " ~ Timesteps_scaled * Density_scaled * Nodes_scaled * Regimes_scaled +
+                          RegimeIndex +
+                          (1 | Condition/SimID)")
+                   )
 model <- lmer(fmla, data = corr_results)
 
 # Summarize model
@@ -321,6 +318,8 @@ lmm <- as.data.frame(coef(summary(model))) %>%
   dplyr::mutate(Signif = ifelse(`Pr(>|t|)` < 0.001, "***",
                                 ifelse(`Pr(>|t|)` < 0.01, "**",
                                        ifelse(`Pr(>|t|)` < 0.05, "*", ""))))
+
+rownames(lmm) <- gsub(":", " × ", gsub("_scaled", "", rownames(lmm)))
 
 # # 1. Koeffizientenplot (zeigt feste Effekte und Interaktionen inkl. Konfidenzintervalle)
 # plot_model(model, type = "est", show.values = TRUE, 
@@ -334,6 +333,27 @@ lmm <- as.data.frame(coef(summary(model))) %>%
        linear_mixed_models[[col_name]] <- lmm
 }
 
+
+
+library(knitr)
+library(kableExtra)
+
+# Beispiel: Ausgabe der Ergebnisse für jedes Modell in der Liste
+for (name in names(linear_mixed_models)) {
+  tab <- linear_mixed_models[[name]]
+  kable(tab, caption = paste("Ergebnisse für", name), format = "html") %>%
+    kable_styling(bootstrap_options = c("striped", "hover")) %>%
+    save_kable(file = paste0("Ergebnisse_", name, ".html"))
+}
+
+
+
+library(xtable)
+for (name in names(linear_mixed_models)) {
+  tab <- linear_mixed_models[[name]]
+  print(xtable(tab, caption = paste("Ergebnisse für", name)),
+        file = paste0("Ergebnisse_", name, ".tex"))
+}
 
 #######################################
 ### Make lineplot panels for each variable 
