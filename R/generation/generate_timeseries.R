@@ -110,27 +110,7 @@ generate_timeseries <- function(Density,
             
             # Get dynamics for current timeseries
             dynamics <- DynamicsMatrices_list[[i]][[j]][[l]][[k]]
-            
-            
-            # ## Generate TS from Rseq
-            # # Generate sequence of regime indices
-            # Rseq <- generate_Rseq(M[k], totTime[t], mean_rep, sd_rep)
-            # 
-            # # Calculate transition matrix from Rseq
-            # transmat <- calc_transmat(Rseq, M[k])
-            # 
-            # # Initialize state matrix
-            # X <- matrix(init, nrow = totTime[t], ncol = N[j])
-            # 
-            # # Get dynamics for current regime
-            # for (m in 2:totTime[t]) {
-            # curreg_mu <- dynamics[[Rseq[m]]][["mu"]]
-            # # curreg_W_temp <- dynamics[[Rseq[m]]][["W_temp"]]
-            # curreg_Beta <- dynamics[[Rseq[m]]][["Beta"]]
-            # curreg_sigma <- dynamics[[Rseq[m]]][["sigma"]]
 
-            
-            
             ## Generate TS from Transmat
             # Generate transmat
             transmat <- generate_transmat(M[k], remain_lower, remain_upper)

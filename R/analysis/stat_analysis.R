@@ -206,28 +206,6 @@ for (i in 1:10) {
 
 ###############################################
 ### Calculate inferential statistics to describe models
-# 
-# ## Calculate ANOVA
-# ANOVA <- aov(Wtemp_corr ~ Timesteps * Density * Nodes * Regimes, corr_results)
-# residuals <- residuals(ANOVA)
-# 
-# qqnorm(residuals)
-# qqline(residuals, col = "red")
-# 
-# hist(residuals, breaks = 50, main = "Histogram of Residuals", xlab = "Residuals")
-# 
-# 
-# plot(density(residuals), main = "Density Plot of Residuals", xlab = "Residuals")
-# curve(dnorm(x, mean=mean(residuals), sd=sd(residuals)), add=TRUE, col="red")
-# 
-# 
-# 
-# ## Calculate robust ANOVA with trimmed means
-# library(ARTool)
-# Wtemp_art <- art(Wtemp_corr ~ Timesteps * Density * Nodes * Regimes, data = corr_results)
-# anova_results <- anova(Wtemp_art)
-# print(anova_results)
-
 
 ## Calculate PERMANOVA
 library(lmPerm)
@@ -321,16 +299,7 @@ lmm <- as.data.frame(coef(summary(model))) %>%
 
 rownames(lmm) <- gsub(":", " × ", gsub("_scaled", "", rownames(lmm)))
 
-# # 1. Koeffizientenplot (zeigt feste Effekte und Interaktionen inkl. Konfidenzintervalle)
-# plot_model(model, type = "est", show.values = TRUE, 
-#            title = paste0("Coefficients for ", col_name)
-# )
-# 
-# # 2. Prädiktor-Effektplot: Darstellung der prädiktiven Effekte der Prädiktoren und ihrer Interaktionen.
-# plot_model(model, type = "pred", terms = c("Timesteps_scaled", "Density_scaled", "Nodes_scaled", "Regimes_scaled"),
-#            title = paste0("Predictive Effects: Timesteps, Density, Nodes und Regimes on ", col_name)
-#)
-       linear_mixed_models[[col_name]] <- lmm
+linear_mixed_models[[col_name]] <- lmm
 }
 
 
