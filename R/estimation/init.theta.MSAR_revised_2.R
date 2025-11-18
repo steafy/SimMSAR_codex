@@ -1,9 +1,97 @@
+#' Initialize MSAR Model Parameters
+#'
+#' Generates initial parameter estimates for MSAR models using k-means clustering
+#' or hierarchical methods. Provides starting values for the EM algorithm.
+#'
+#' @param data 3D array of time series data (time × samples × variables).
+#' @param ... Additional arguments (currently unused).
+#' @param M Integer. Number of regimes (latent states).
+#' @param order Integer. Autoregressive order (typically 1 for VAR(1)).
+#' @param regime_names Character vector of regime names (optional).
+#' @param nh.emissions Logical or parameters for non-homogeneous emissions (optional).
+#' @param nh.transitions Logical or parameters for non-homogeneous transitions (optional).
+#' @param label Character. Model type: "HH" (homogeneous), "HN", "NH", or "NN". Default: "HH".
+#' @param ncov.emis Integer. Number of emission covariates. Default: 0.
+#' @param ncov.trans Integer. Number of transition covariates. Default: 0.
+#' @param cl.init Character. Clustering initialization method: "mean" or "hclust". Default: "mean".
+#' @param verbose Logical. Print progress messages. Default: FALSE.
+#'
+#' @return A thetaMSAR object containing initial parameter estimates:
+#'   \describe{
+#'     \item{A}{List of lag-1 coefficient matrices (if order > 0)}
+#'     \item{A0}{Matrix of intercepts (M × d)}
+#'     \item{sigma}{List of M covariance matrices}
+#'     \item{prior}{Initial regime probabilities (M × 1)}
+#'     \item{transmat}{Regime transition matrix (M × M)}
+#'   }
+#'   Plus attributes: NbRegimes, NbComp, order, label, etc.
+#'
+#' @details
+#' **Initialization Strategy**:
+#'
+#' 1. **K-means Clustering** (cl.init="mean", default):
+#'    \itemize{
+#'      \item If order > 0: Clusters on first differences (d.data[t] = data[t] - data[t-1])
+#'      \item If order = 0: Clusters on raw data
+#'      \item Assigns each time point to one of M regimes
+#'      \item Handles duplicated centers by re-sampling
+#'    }
+#'
+#' 2. **Hierarchical Clustering** (cl.init="hclust"):
+#'    \itemize{
+#'      \item Uses hierarchical clustering with cutree to define M regimes
+#'      \item Alternative when k-means fails or for better initialization
+#'    }
+#'
+#' 3. **Parameter Estimation**: For each regime:
+#'    \itemize{
+#'      \item A (AR coefficients): OLS regression of data[t] on data[t-1] within regime
+#'      \item A0 (intercepts): Mean of data within regime
+#'      \item sigma (covariance): Residual covariance within regime
+#'      \item prior: Proportion of time in each regime
+#'      \item transmat: Empirical transition frequencies
+#'    }
+#'
+#' @note
+#' \itemize{
+#'   \item Dependencies loaded centrally via R/dependencies.R (NHMSAR required)
+#'   \item Random initialization may give different results across runs
+#'   \item If M=1, returns single-regime VAR initialization
+#'   \item Handles missing data by removing NA rows
+#'   \item May issue warning if duplicate centers found after 5 retries
+#' }
+#'
+#' @seealso
+#' \code{\link{fit.MSAR_revised_2}} for EM fitting using these initial values
+#' \code{\link{init_and_fit.MSAR_Lasso_2}} which calls this function
+#' \code{\link{as.thetaMSAR_revised_2}} for converting parameter lists
+#'
+#' @examples
+#' \dontrun{
+#' # Generate sample data
+#' data_array <- array(rnorm(1000 * 4), dim = c(1000, 1, 4))
+#'
+#' # Initialize 2-regime VAR(1) model
+#' theta_init <- init.theta.MSAR_revised_2(
+#'   data = data_array,
+#'   M = 2,
+#'   order = 1,
+#'   label = "HH",
+#'   verbose = TRUE
+#' )
+#'
+#' # Check initialization
+#' print(theta_init$prior)      # Initial regime probs
+#' print(theta_init$transmat)   # Transition matrix
+#' }
+#'
+#' @export
 # Dependencies are loaded centrally via R/dependencies.R
 # Required packages: NHMSAR
 
 
-init.theta.MSAR_revised_2 <- function (data, ..., M, order, regime_names = NULL, nh.emissions = NULL, 
-                                     nh.transitions = NULL, label = NULL, ncov.emis = 0, ncov.trans = 0, 
+init.theta.MSAR_revised_2 <- function (data, ..., M, order, regime_names = NULL, nh.emissions = NULL,
+                                     nh.transitions = NULL, label = NULL, ncov.emis = 0, ncov.trans = 0,
                                      cl.init = "mean",
                                      verbose = FALSE) 
 {

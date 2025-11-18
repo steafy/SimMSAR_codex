@@ -1,3 +1,90 @@
+#' Initialize and Fit MSAR Model with LASSO and Retry Logic
+#'
+#' Wrapper function that combines parameter initialization and model fitting for
+#' MSAR models with automatic retry on failure. Implements robust estimation by
+#' re-initializing and retrying if fitting fails due to numerical issues.
+#'
+#' @param data 3D array of time series data with dimensions (time, samples, variables).
+#'   Typically a single time series, so samples = 1.
+#' @param M Integer. Number of regimes (latent states) in the MSAR model.
+#' @param order Integer. Autoregressive order (lag). Typically 1 for VAR(1).
+#' @param MaxIter Integer. Maximum iterations for EM algorithm. Default: 200.
+#' @param retry Integer. Number of retry attempts if fitting fails. Default: 4.
+#' @param eps Numeric. Convergence criterion (epsilon). Default: 1e-5.
+#' @param verbose Logical. Print detailed progress messages. Default: FALSE.
+#'
+#' @return List with two components:
+#'   \describe{
+#'     \item{fit}{Fitted MSAR model object (from \code{fit.MSAR_revised_2}), or NULL if all attempts failed}
+#'     \item{error}{Error message if fitting failed, or NULL if successful}
+#'   }
+#'
+#' @details
+#' The function implements a robust fitting procedure:
+#'
+#' 1. **Initialization**: Calls \code{init.theta.MSAR_revised_2} to generate
+#'    initial parameter estimates using hierarchical clustering (HH method)
+#'
+#' 2. **Fitting**: Calls \code{fit.MSAR_revised_2} with LASSO penalty to fit
+#'    the MSAR model via EM algorithm
+#'
+#' 3. **Error Handling**: Wraps fitting in \code{tryCatch} to catch:
+#'    \itemize{
+#'      \item Numerical errors (singular matrices, convergence failures)
+#'      \item Warnings (ill-conditioned problems)
+#'    }
+#'
+#' 4. **Retry Logic**: If fitting fails:
+#'    \itemize{
+#'      \item Re-initializes parameters (different random initialization)
+#'      \item Retries up to \code{retry + 1} total attempts
+#'      \item Returns NULL fit if all attempts fail
+#'    }
+#'
+#' This retry mechanism is critical because:
+#' \itemize{
+#'   \item EM algorithms can fail with poor initialization
+#'   \item Numerical issues can occur with ill-conditioned data
+#'   \item Different initializations may converge to different local optima
+#' }
+#'
+#' @note
+#' \itemize{
+#'   \item Each retry gets a fresh random initialization
+#'   \item Retry messages are printed to console via \code{message()}
+#'   \item Error/warning messages are captured and returned in \code{error} field
+#'   \item Successful fits break the retry loop immediately
+#' }
+#'
+#' @seealso
+#' \code{\link{init.theta.MSAR_revised_2}} for parameter initialization
+#' \code{\link{fit.MSAR_revised_2}} for EM algorithm fitting
+#' \code{\link{estimate_MSAR}} which calls this function
+#'
+#' @examples
+#' \dontrun{
+#' # Prepare data array
+#' ts_data <- matrix(rnorm(1000 * 4), 1000, 4)
+#' data_array <- array(ts_data, dim = c(1000, 1, 4))
+#'
+#' # Fit 2-regime MSAR model with retry
+#' result <- init_and_fit.MSAR_Lasso_2(
+#'   data = data_array,
+#'   M = 2,
+#'   order = 1,
+#'   MaxIter = 200,
+#'   retry = 5,
+#'   verbose = TRUE
+#' )
+#'
+#' if (!is.null(result$fit)) {
+#'   print("Fitting succeeded!")
+#' } else {
+#'   print(paste("Fitting failed:", result$error))
+#' }
+#' }
+#'
+#' @export
 init_and_fit.MSAR_Lasso_2 <-
   function(data,
            M,

@@ -1,7 +1,48 @@
+#' M-Step with LASSO Penalty for MSAR Models
+#'
+#' Maximization step of the EM algorithm with LASSO regularization for sparse
+#' network estimation. Updates autoregressive parameters, intercepts, and
+#' covariance matrices using regime-weighted observations.
+#'
+#' @param data 3D array of time series data (time × samples × variables).
+#' @param theta Current parameter object (thetaMSAR).
+#' @param FB Forward-backward output from E-step containing regime probabilities.
+#' @param verbose Logical. Print progress messages. Default: FALSE.
+#'
+#' @return List of updated parameters:
+#'   \describe{
+#'     \item{A}{List of lag-1 coefficient matrices (one per regime)}
+#'     \item{A0}{Matrix of intercepts}
+#'     \item{sigma}{List of covariance matrices}
+#'     \item{prior}{Updated regime prior probabilities}
+#'     \item{transmat}{Updated transition matrix}
+#'   }
+#'
+#' @details
+#' Uses LASSO (L1) penalty to encourage sparse networks. For each regime m:
+#' \itemize{
+#'   \item Weights observations by smoothed regime probabilities (from FB)
+#'   \item Applies LASSO regression (via lars package) to estimate sparse AR coefficients
+#'   \item Selects optimal penalty via cross-validation or BIC
+#'   \item Estimates covariance from weighted residuals
+#' }
+#'
+#' Typically used only in first EM iteration; subsequent iterations use
+#' \code{Mstep.hh.reduct.MSAR_patched_2} for efficiency.
+#'
+#' @note
+#' Dependencies loaded centrally via R/dependencies.R (prettyGraphs, lars required)
+#'
+#' @seealso
+#' \code{\link{fit.MSAR_revised_2}} which calls this function
+#' \code{\link{Mstep.hh.reduct.MSAR_patched_2}} for reduced M-step
+#'
+#' @keywords internal
+#' @export
 # Dependencies are loaded centrally via R/dependencies.R
 # Required packages: prettyGraphs, lars
 
-Mstep.hh.lasso.MSAR_patched_2 <- 
+Mstep.hh.lasso.MSAR_patched_2 <-
 function(data,theta,FB,verbose = FALSE)  {  
   T=dim(data)[1]
   N.samples = dim(as.array(data))[2] 
