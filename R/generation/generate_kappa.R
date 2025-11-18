@@ -1,5 +1,51 @@
-# Function to generate precision matrix (kappa)
-
+#' Generate Precision Matrix (Kappa)
+#'
+#' Generates a positive definite precision matrix for the contemporaneous network
+#' with specified edge density. Ensures positive definiteness through diagonal dominance.
+#'
+#' @param N Integer. Number of nodes in the network.
+#' @param Density Numeric (0 to 1). Target edge density for off-diagonal elements.
+#' @param min_edg_val Numeric. Minimum absolute value for non-zero edges.
+#' @param max_edg_val Numeric. Maximum absolute value for non-zero edges.
+#'
+#' @return A list containing:
+#'   \describe{
+#'     \item{kappa}{Precision matrix (N × N), symmetric and positive definite}
+#'     \item{kappa_posdef}{"Yes" or "No" indicating positive definiteness}
+#'   }
+#'
+#' @details
+#' The function generates kappa as follows:
+#'
+#' 1. **Off-diagonal elements**: Randomly selects edges from lower triangle based on
+#'    Density parameter, assigns random values from [min_edg_val, max_edg_val] with
+#'    random signs, and mirrors to upper triangle for symmetry
+#'
+#' 2. **Diagonal dominance**: Sets diagonal elements to sum of absolute row values + 0.1:
+#'    \deqn{kappa[i,i] = \sum_{j \neq i} |kappa[i,j]| + 0.1}
+#'
+#' 3. **Verification**: Checks positive definiteness via eigenvalue analysis
+#'
+#' The precision matrix kappa is inverted to obtain the covariance matrix sigma,
+#' and used to calculate the contemporaneous network Wcont.
+#'
+#' @note
+#' The diagonal dominance approach guarantees positive definiteness, which ensures
+#' kappa can be inverted to obtain a valid covariance matrix.
+#'
+#' @seealso
+#' \code{\link{generate_random}} for random value generation
+#' \code{\link{generate_netdyn}} which uses this function
+#'
+#' @examples
+#' \dontrun{
+#' # Generate precision matrix for 4 nodes
+#' kappa_result <- generate_kappa(N = 4, Density = 0.3,
+#'                                min_edg_val = 0.05, max_edg_val = 1)
+#' print(kappa_result$kappa_posdef)  # Should be "Yes"
+#' }
+#'
+#' @export
 generate_kappa <- function(N, Density, min_edg_val, max_edg_val) {
 kappa <- matrix(0, nrow = N, ncol = N)
 

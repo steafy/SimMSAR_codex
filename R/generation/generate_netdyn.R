@@ -1,5 +1,78 @@
-## Function to generate dynamics for each regime
-
+#' Generate Network Dynamics for a Single Regime
+#'
+#' Generates complete network dynamics for one regime, including temporal (lag-1) and
+#' contemporaneous networks, along with associated statistics and controllability measures.
+#'
+#' @param N Integer. Number of nodes in the network.
+#' @param Density Numeric (0 to 1). Target edge density for the network.
+#' @param min_edg_val Numeric. Minimum absolute edge weight (edges below this are zero).
+#' @param max_edg_val Numeric. Maximum absolute edge weight.
+#'
+#' @return A list containing network dynamics and statistics:
+#'   \describe{
+#'     \item{mu}{Mean vector (length N)}
+#'     \item{Beta}{Lag-1 autoregressive coefficient matrix (N × N)}
+#'     \item{Beta_sd}{Standard deviation of Beta values}
+#'     \item{Beta_strength}{Node strength for Beta network}
+#'     \item{Beta_mean_strength}{Mean node strength for Beta}
+#'     \item{Beta_density}{Edge density of Beta}
+#'     \item{Beta_weighted_density}{Weighted density of Beta}
+#'     \item{Beta_stability}{Stability indicator for Beta (TRUE/FALSE)}
+#'     \item{Wtemp}{Temporal partial correlation matrix (N × N)}
+#'     \item{Wtemp_thresh}{Minimum non-zero value in Wtemp}
+#'     \item{Wtemp_density}{Edge density of Wtemp}
+#'     \item{Wtemp_weighted_density}{Weighted density of Wtemp}
+#'     \item{Wtemp_ac}{Average controllability for Wtemp}
+#'     \item{sigma}{Residual covariance matrix (N × N)}
+#'     \item{kappa}{Precision matrix (N × N)}
+#'     \item{Wcont}{Contemporaneous partial correlation matrix (N × N)}
+#'     \item{Wcont_thresh}{Minimum non-zero value in Wcont}
+#'     \item{Wcont_strength}{Node strength for Wcont}
+#'     \item{Wcont_mean_strength}{Mean node strength for Wcont}
+#'     \item{Wcont_density}{Edge density of Wcont}
+#'     \item{Wcont_weighted_density}{Weighted density of Wcont}
+#'     \item{kappa_pos.definit}{"Yes"/"No" indicating if kappa is positive definite}
+#'     \item{Wcont_stability}{Stability indicator for Wcont (TRUE/FALSE)}
+#'     \item{Wcont_ac}{Average controllability for Wcont}
+#'   }
+#'
+#' @details
+#' The function generates network dynamics in several steps:
+#'
+#' 1. **Mean vector**: Sampled from uniform(0, 5)
+#'
+#' 2. **Temporal network**:
+#'    \itemize{
+#'      \item Beta matrix generated via \code{generate_Beta}
+#'      \item Wtemp calculated as standardized Beta: Wtemp[i,j] = Beta[i,j] / sqrt(sigma[i,i] * kappa[j,j] + Beta[i,j]^2)
+#'    }
+#'
+#' 3. **Contemporaneous network**:
+#'    \itemize{
+#'      \item Kappa (precision matrix) generated via \code{generate_kappa}
+#'      \item Sigma = kappa^{-1}
+#'      \item Wcont calculated from kappa: Wcont[i,j] = -kappa[i,j] / sqrt(kappa[i,i] * kappa[j,j])
+#'    }
+#'
+#' 4. **Statistics**: Network density, strength, controllability computed for both networks
+#'
+#' @note
+#' Dependencies are loaded centrally via R/dependencies.R
+#' Required packages: netcontrol, Matrix
+#'
+#' @seealso
+#' \code{\link{generate_Beta}} for temporal network generation
+#' \code{\link{generate_kappa}} for precision matrix generation
+#' \code{\link{check_stability}} for stability checking
+#'
+#' @examples
+#' \dontrun{
+#' # Generate dynamics for 4-node network with 30% density
+#' dynamics <- generate_netdyn(N = 4, Density = 0.3,
+#'                             min_edg_val = 0.05, max_edg_val = 1)
+#' }
+#'
+#' @export
 # Dependencies are loaded centrally via R/dependencies.R
 # Required packages: netcontrol, Matrix
 
