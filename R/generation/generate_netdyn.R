@@ -5,10 +5,10 @@ library(netcontrol)
 library(Matrix)
 
 # Load functions
-source("generate_random.R")
-source("generate_Beta.R")
-source("generate_kappa.R")
-source("check_stability.R")
+source("R/generation/generate_random.R")
+source("R/generation/generate_Beta.R")
+source("R/generation/generate_kappa.R")
+source("R/generation/check_stability.R")
 
 
 generate_netdyn <- function (N, Density, min_edg_val, max_edg_val){

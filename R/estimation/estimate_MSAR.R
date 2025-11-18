@@ -5,15 +5,15 @@ library(dplyr)
 library(progress)
 
 # Load functions from NHMSAR
-source("fit.MSAR_revised_2.R")
-source("init.theta.MSAR_revised_2.R")
-source("init_and_fit.MSAR_Lasso_2.R")
+source("R/estimation/fit.MSAR_revised_2.R")
+source("R/estimation/init.theta.MSAR_revised_2.R")
+source("R/estimation/init_and_fit.MSAR_Lasso_2.R")
 
 # Load functions to assign and compare regime dynamics
-source("asign_regimes.R")
-source("senspec.R")
-source("summarize_cor.R")
-source("calculate_MAE.R")
+source("R/utils/asign_regimes.R")
+source("R/utils/senspec.R")
+source("R/utils/summarize_cor.R")
+source("R/utils/calculate_MAE.R")
 
 
 

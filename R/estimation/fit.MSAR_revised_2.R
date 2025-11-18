@@ -1,7 +1,7 @@
-source("as.thetaMSAR_revised_2.R")
-source("Mstep.hh.lasso.MSAR_patched_2.R")
-source("Mstep.hh.reduct.MSAR_patched_2.R")
-source("EM_converged_patched_2.R")
+source("R/estimation/as.thetaMSAR_revised_2.R")
+source("R/estimation/Mstep.hh.lasso.MSAR_patched_2.R")
+source("R/estimation/Mstep.hh.reduct.MSAR_patched_2.R")
+source("R/estimation/EM_converged_patched_2.R")
 
 fit.MSAR_revised_2 <- 
 function(

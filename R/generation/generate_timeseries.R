@@ -22,8 +22,8 @@ library(graphicalVAR)
 library(abind)
 library(mvtnorm)
 library(progress)
-source("generate_netdyn.R")
-source("generate_transmat.R")
+source("R/generation/generate_netdyn.R")
+source("R/generation/generate_transmat.R")
 
 generate_timeseries <- function(Density,
                                 N,

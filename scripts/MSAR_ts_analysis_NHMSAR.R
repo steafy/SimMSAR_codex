@@ -1,8 +1,8 @@
 # Load functions for data generation
-source("generate_timeseries.R")
+source("R/generation/generate_timeseries.R")
 
 # Load functions for model estimation
-source("estimate_MSAR.R")
+source("R/estimation/estimate_MSAR.R")
 
 # Unused functions
 #source("as.thetaMSAR_revised.R")
