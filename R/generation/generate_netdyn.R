@@ -1,8 +1,7 @@
 ## Function to generate dynamics for each regime
 
-# load libraries
-library(netcontrol)
-library(Matrix)
+# Dependencies are loaded centrally via R/dependencies.R
+# Required packages: netcontrol, Matrix
 
 # Load functions
 source("R/generation/generate_random.R")

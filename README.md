@@ -110,18 +110,33 @@ This will:
 
 ## Dependencies
 
-Required R packages:
-- `NHMSAR` - Core MSAR functionality
-- `netcontrol` - Network control analysis
-- `huge` - Nonparanormal transformation
-- `dplyr` - Data manipulation
-- `ggplot2` - Visualization
-- `lme4`, `lmerTest` - Mixed models
-- `lmPerm` - Permutation tests
-- `progress` - Progress bars
-- `mvtnorm` - Multivariate normal distributions
-- `graphicalVAR` - Graphical VAR models
-- Additional: `dunn.test`, `sjPlot`, `knitr`, `kableExtra`, `xtable`, `cowplot`
+SimMSAR uses a centralized dependency management system. All required packages are:
+
+**Core:** NHMSAR, netcontrol, huge
+**Data:** dplyr, Matrix
+**Statistics:** lme4, lmerTest, lmPerm, dunn.test, effects, sjPlot
+**Simulation:** graphicalVAR, mvtnorm, abind
+**Regularization:** lars, prettyGraphs
+**Visualization:** ggplot2, plotly, cowplot, RColorBrewer
+**Output:** knitr, kableExtra, xtable
+**Utilities:** progress
+
+### Managing Dependencies
+
+Dependencies are loaded automatically when you run the main script. To manage dependencies manually:
+
+```r
+# Load all dependencies
+source("R/dependencies.R")
+
+# Check package status
+print_package_summary()
+
+# Install missing packages
+install_missing_packages()
+```
+
+See [Dependency Management Guide](docs/DEPENDENCY_MANAGEMENT.md) for details.
 
 ## Output
 

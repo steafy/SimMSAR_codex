@@ -1,5 +1,5 @@
-library(prettyGraphs)
-library(lars)
+# Dependencies are loaded centrally via R/dependencies.R
+# Required packages: prettyGraphs, lars
 
 Mstep.hh.lasso.MSAR_patched_2 <- 
 function(data,theta,FB,verbose = FALSE)  {  

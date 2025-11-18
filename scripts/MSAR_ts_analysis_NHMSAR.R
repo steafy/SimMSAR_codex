@@ -1,3 +1,10 @@
+# =============================================================================
+# SimMSAR Time Series Analysis - Main Execution Script
+# =============================================================================
+
+# Load all package dependencies
+source("R/dependencies.R")
+
 # Load functions for data generation
 source("R/generation/generate_timeseries.R")
 

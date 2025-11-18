@@ -1,8 +1,5 @@
-## Load packages
-library(huge)
-library(NHMSAR)
-library(dplyr)
-library(progress)
+# Dependencies are loaded centrally via R/dependencies.R
+# Required packages: huge, NHMSAR, dplyr, progress
 
 # Load functions from NHMSAR
 source("R/estimation/fit.MSAR_revised_2.R")

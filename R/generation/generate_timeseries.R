@@ -16,12 +16,9 @@
 ## sd_rep <- 2                      : Set sd for mean length of regime repetitions in Rseq
 
 
-# Load libraries
-library(netcontrol)
-library(graphicalVAR)
-library(abind)
-library(mvtnorm)
-library(progress)
+# Dependencies are loaded centrally via R/dependencies.R
+# Required packages: netcontrol, graphicalVAR, abind, mvtnorm, progress
+
 source("R/generation/generate_netdyn.R")
 source("R/generation/generate_transmat.R")
 

@@ -1,0 +1,41 @@
+Package: SimMSAR
+Type: Project
+Title: Simulation and Estimation of Markov-Switching Autoregressive Models for Network Dynamics
+Version: 0.1.0
+Authors@R: person("Your Name", "your.email@example.com", role = c("aut", "cre"))
+Description: This project implements simulation and estimation of Markov-Switching
+    Autoregressive (MSAR) models for network dynamics using the NHMSAR package. It
+    provides tools for generating synthetic network time-series data with regime-switching
+    dynamics and estimating MSAR models to recover the underlying network structures.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends:
+    R (>= 4.0.0)
+Imports:
+    NHMSAR,
+    netcontrol,
+    huge,
+    dplyr,
+    Matrix,
+    lme4,
+    lmerTest,
+    lmPerm,
+    dunn.test,
+    effects,
+    sjPlot,
+    graphicalVAR,
+    mvtnorm,
+    abind,
+    lars,
+    prettyGraphs,
+    ggplot2,
+    plotly,
+    cowplot,
+    RColorBrewer,
+    knitr,
+    kableExtra,
+    xtable,
+    progress
+Suggests:
+    testthat (>= 3.0.0)
+RoxygenNote: 7.2.0

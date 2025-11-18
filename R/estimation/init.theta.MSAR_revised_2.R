@@ -1,4 +1,5 @@
-library(NHMSAR)
+# Dependencies are loaded centrally via R/dependencies.R
+# Required packages: NHMSAR
 
 
 init.theta.MSAR_revised_2 <- function (data, ..., M, order, regime_names = NULL, nh.emissions = NULL, 
