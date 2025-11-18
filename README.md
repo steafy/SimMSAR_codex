@@ -96,17 +96,53 @@ source("R/analysis/stat_analysis.R")
 
 ## Quick Start
 
-Run the main analysis script:
+### 1. Configure Your Simulation
+
+Open `scripts/MSAR_ts_analysis_NHMSAR.R` and adjust parameters in the configuration section:
+
+```r
+# Network Structure
+N <- c(4)              # Number of nodes
+Density <- c(0.25)     # Edge density
+
+# Regimes
+M <- c(2)              # Number of regimes
+
+# Time Series
+T <- c(3500)           # Time steps
+n_ts <- 30             # Number of time series
+
+# Model Estimation
+MaxIter <- 200         # Max EM iterations
+eps <- 1e-5            # Convergence criterion
+
+# Output
+save_output <- TRUE    # Save results
+output_dir <- "output" # Output directory
+```
+
+### 2. Run the Analysis
 
 ```r
 source("scripts/MSAR_ts_analysis_NHMSAR.R")
 ```
 
-This will:
-1. Generate synthetic time-series data with specified network parameters
-2. Estimate MSAR models for each time series
-3. Compare estimated vs. true network dynamics
-4. Save results to `.rds` files
+The script will:
+1. Display your configuration settings
+2. Generate synthetic time-series data with specified network parameters
+3. Estimate MSAR models for each time series
+4. Compare estimated vs. true network dynamics
+5. Save results to timestamped `.rds` files in the output directory
+
+### Configuration Features
+
+- **Well-documented parameters**: Each parameter includes description and valid ranges
+- **Parameter validation**: Configuration printed at start for verification
+- **Automatic output management**: Creates output directory and timestamps files
+- **Reproducibility**: Optional seed setting for reproducible results
+- **Easy experimentation**: Change parameters and re-run without editing code
+
+For detailed configuration information, see the [Configuration Guide](docs/CONFIGURATION_GUIDE.md).
 
 ## Dependencies
 
