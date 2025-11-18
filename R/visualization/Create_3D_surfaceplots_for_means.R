@@ -2,8 +2,14 @@ library(plotly)
 
 
 ## Extract stats from results list to dataframe
-# Initialize list to store stats data for each combination from Density*T*N*M
-data_list <- list()
+# PERFORMANCE: Pre-allocate list to avoid O(n²) list copying
+# Size is known: T × Density × N × M combinations
+max_size <- length(names(MSAR_models)) *
+            length(names(MSAR_models[[1]])) *
+            length(names(MSAR_models[[1]][[1]])) *
+            length(names(MSAR_models[[1]][[1]][[1]]))
+data_list <- vector("list", max_size)
+list_idx <- 0
 MSAR_results <- list()
 
 # Extract stats data from MSAR results list
@@ -11,6 +17,7 @@ for (t in names(MSAR_models)) {
   for (density in names(MSAR_models[[t]])) {
     for (nodes in names(MSAR_models[[t]][[density]])) {
       for (regimes in names(MSAR_models[[t]][[density]][[nodes]])) {
+        list_idx <- list_idx + 1
         stats <- MSAR_models[[t]][[density]][[nodes]][[regimes]][["Stats"]]
         temp <- data.frame(
           Timesteps = as.numeric(gsub("_Timesteps", "", t)),
@@ -27,11 +34,14 @@ for (t in names(MSAR_models)) {
           Wcont_ac_corr_mean = stats$Wcont_ac_corr$Mean,
           Wcont_ac_corr_sd = stats$Wcont_ac_corr$Sd
         )
-        data_list <- append(data_list, list(temp))
+        data_list[[list_idx]] <- temp
       }
     }
   }
 }
+
+# PERFORMANCE: Trim to actual size (should match max_size unless errors occurred)
+data_list <- data_list[1:list_idx]
 
 
 # Combine all dataframes in list in one dataframe
@@ -193,26 +203,30 @@ for (result in seq(6, ncol(MSAR_results) - 1, by = 2)) {
     # Loop over density
     for (density in unique(results$Density)) {
       density_data <- results %>% filter(Density == density)
-      
+
       # Get values for each no. of regimes
       regime_values <- unique(density_data$Regimes)
-      subplot_list <- list()
-      
+
+      # PERFORMANCE: Pre-allocate subplot list
+      subplot_list <- vector("list", length(regime_values))
+      subplot_idx <- 0
+
       for (regime in regime_values) {
+        subplot_idx <- subplot_idx + 1
         # Add legend only once
         show_legend <- regime == min(regime_values)
-        
+
         fig_temp <- line_plot(
-          density_data, 
-          mean_col, 
-          sd_col, 
-          regime, 
-          scale_factor, 
-          x_offset, 
-          y_limits, 
+          density_data,
+          mean_col,
+          sd_col,
+          regime,
+          scale_factor,
+          x_offset,
+          y_limits,
           show_legend = show_legend
         )
-        subplot_list <- append(subplot_list, list(fig_temp))
+        subplot_list[[subplot_idx]] <- fig_temp
       }
       
       # Combine subplots

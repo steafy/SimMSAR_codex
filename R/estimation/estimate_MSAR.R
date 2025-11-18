@@ -149,16 +149,22 @@ for (t in seq_along(T)) {
       MSAR_level3 <- list()
       for (k in seq_along(M)) {
         MSAR_level4 <- list()
-        vec_all_Wtemp_cor <- numeric()
-        vec_all_Wtemp_ac_cor <-numeric()
-        vec_all_Wcont_cor <- numeric() 
-        vec_all_Wcont_ac_cor <- numeric()
-        vec_all_Wtemp_sen <- numeric()
-        vec_all_Wtemp_spec <- numeric()
-        vec_all_Wcont_sen <- numeric()
-        vec_all_Wcont_spec <- numeric()
-        vec_all_Wtemp_MAE <- numeric()
-        vec_all_Wcont_MAE <- numeric()
+
+        # PERFORMANCE: Pre-allocate vectors to maximum possible size
+        # This avoids costly vector copying in loops (O(n²) -> O(n))
+        max_size <- n_ts * M[k]
+        vec_all_Wtemp_cor <- numeric(max_size)
+        vec_all_Wtemp_ac_cor <- numeric(max_size)
+        vec_all_Wcont_cor <- numeric(max_size)
+        vec_all_Wcont_ac_cor <- numeric(max_size)
+        vec_all_Wtemp_sen <- numeric(max_size)
+        vec_all_Wtemp_spec <- numeric(max_size)
+        vec_all_Wcont_sen <- numeric(max_size)
+        vec_all_Wcont_spec <- numeric(max_size)
+        vec_all_Wtemp_MAE <- numeric(max_size)
+        vec_all_Wcont_MAE <- numeric(max_size)
+        vec_idx <- 0  # Index counter for vector filling
+
         for (l in 1:n_ts) {
           
           ### Jan
@@ -323,65 +329,58 @@ for (t in seq_along(T)) {
           # Asign original and estimated regimes based on highest correlations of Wtemp
           if (M[k] > 1) {
             asigned_regimes <- asign_regimes(cor_results)
-            
-            # Add highest correlations to overall vector
-            vec_all_Wtemp_cor <- c(vec_all_Wtemp_cor,
-                                   asigned_regimes[ ,3]
-            )
-            
+
             # Make regimewise pairs of original and estimated Wtemp based on highest correlations
             pair_Wtemp <- list()
             for (m in 1:nrow(asigned_regimes)) {
+              vec_idx <- vec_idx + 1  # PERFORMANCE: Increment index for pre-allocated vectors
+
+              # Store correlation directly in pre-allocated vector
+              vec_all_Wtemp_cor[vec_idx] <- asigned_regimes[m, 3]
+
               orig_Wtemp = current_regimes[[asigned_regimes[[m, 1]]]][["Wtemp"]]
               est_Wtemp <- est_Wtemps[[asigned_regimes[[m, 2]]]]
               Wtemp_senspec <- senspec(orig_Wtemp,
                                        est_Wtemp
               )
-              vec_all_Wtemp_sen <- c(vec_all_Wtemp_sen,
-                                     Wtemp_senspec[["sensitivity"]]
-              )
-              vec_all_Wtemp_spec <- c(vec_all_Wtemp_spec,
-                                      Wtemp_senspec[["specificity"]]
-              )
+              vec_all_Wtemp_sen[vec_idx] <- Wtemp_senspec[["sensitivity"]]
+              vec_all_Wtemp_spec[vec_idx] <- Wtemp_senspec[["specificity"]]
+
               MAE_Wtemp <- calculate_MAE(orig_Wtemp, est_Wtemp)
-              vec_all_Wtemp_MAE <- c(vec_all_Wtemp_MAE, MAE_Wtemp)
+              vec_all_Wtemp_MAE[vec_idx] <- MAE_Wtemp
+
               est_Wtemp_ac <- ave_control_centrality(est_Wtemp)
               orig_Wtemp_ac <- current_regimes[[asigned_regimes[[m, 1]]]][["Wtemp_ac"]]
               cor_Wtemp_ac <- cor(orig_Wtemp_ac,
                                   est_Wtemp_ac,
                                   method = "pearson"
               )
+              vec_all_Wtemp_ac_cor[vec_idx] <- cor_Wtemp_ac
+
               orig_Wcont <- current_regimes[[asigned_regimes[[m, 1]]]][["Wcont"]]
               est_Wcont <- est_Wconts[[asigned_regimes[[m, 2]]]]
               Wcont_senspec <- senspec(orig_Wcont,
                                        est_Wcont
               )
-              vec_all_Wcont_sen <- c(vec_all_Wcont_sen,
-                                     Wcont_senspec[["sensitivity"]]
-              )
-              vec_all_Wcont_spec <- c(vec_all_Wcont_spec,
-                                      Wcont_senspec[["specificity"]]
-              )
-              vec_all_Wtemp_ac_cor <- c(vec_all_Wtemp_ac_cor, cor_Wtemp_ac
-              )
+              vec_all_Wcont_sen[vec_idx] <- Wcont_senspec[["sensitivity"]]
+              vec_all_Wcont_spec[vec_idx] <- Wcont_senspec[["specificity"]]
+
               cor_Wcont <- cor(as.vector(orig_Wcont),
                                as.vector(est_Wcont),
                                method = "pearson"
               )
+              vec_all_Wcont_cor[vec_idx] <- cor_Wcont
+
               MAE_Wcont <- calculate_MAE(orig_Wcont, est_Wcont)
-              vec_all_Wcont_cor <- c(vec_all_Wcont_cor,
-                                     cor_Wcont
-              )
-              vec_all_Wcont_MAE <- c(vec_all_Wcont_MAE, MAE_Wcont)
+              vec_all_Wcont_MAE[vec_idx] <- MAE_Wcont
+
               est_Wcont_ac <- ave_control_centrality(est_Wcont)
               orig_Wcont_ac <- current_regimes[[asigned_regimes[[m, 1]]]][["Wcont_ac"]]
               cor_Wcont_ac <- cor(orig_Wcont_ac,
                                   est_Wcont_ac,
                                   method = "pearson"
               )
-              vec_all_Wcont_ac_cor <- c(vec_all_Wcont_ac_cor,
-                                        cor_Wcont_ac
-              )
+              vec_all_Wcont_ac_cor[vec_idx] <- cor_Wcont_ac
               
               pair_Wtemp[[paste0("Regime", m)]] <- list("orig. Wtemp" = orig_Wtemp,
                                                         "est. Wtemp" = est_Wtemp,
@@ -404,24 +403,24 @@ for (t in seq_along(T)) {
               )
             }
           } else {
+            # PERFORMANCE: Single regime case - use direct indexing instead of vector growth
+            vec_idx <- vec_idx + 1
+
             pair_Wtemp <- list()
             orig_Wtemp <- current_regimes[["Regime1"]][["Wtemp"]]
             est_Wtemp <- est_Wtemps[["Regime1"]]
             Wtemp_senspec <- senspec(orig_Wtemp,
                                      est_Wtemp
             )
-            vec_all_Wtemp_sen <- c(vec_all_Wtemp_sen,
-                                   Wtemp_senspec[["sensitivity"]]
-            )
-            vec_all_Wtemp_spec <- c(vec_all_Wtemp_spec,
-                                    Wtemp_senspec[["specificity"]]
-            )
+            vec_all_Wtemp_sen[vec_idx] <- Wtemp_senspec[["sensitivity"]]
+            vec_all_Wtemp_spec[vec_idx] <- Wtemp_senspec[["specificity"]]
+
             cor_Wtemp <- cor(as.vector(orig_Wtemp),
                              as.vector(est_Wtemp),
                              method = "pearson"
             )
             MAE_Wtemp <- calculate_MAE(orig_Wtemp, est_Wtemp)
-            vec_all_Wtemp_MAE <- c(vec_all_Wtemp_MAE, MAE_Wtemp)
+            vec_all_Wtemp_MAE[vec_idx] <- MAE_Wtemp
             est_Wtemp_ac <- ave_control_centrality(est_Wtemp)
             orig_Wtemp_ac <- current_regimes[["Regime1"]][["Wtemp_ac"]]
             cor_Wtemp_ac <- cor(orig_Wtemp_ac,
@@ -434,35 +433,25 @@ for (t in seq_along(T)) {
                              as.vector(est_Wcont),
                              method = "pearson"
             )
-            vec_all_Wtemp_cor <- c(vec_all_Wtemp_cor,
-                                   cor_Wtemp
-            )
-            vec_all_Wtemp_ac_cor <- c(vec_all_Wtemp_ac_cor,
-                                      cor_Wtemp_ac
-            )
-            vec_all_Wcont_cor <- c(vec_all_Wcont_cor,
-                                   cor_Wcont
-            )
+            vec_all_Wtemp_cor[vec_idx] <- cor_Wtemp
+            vec_all_Wtemp_ac_cor[vec_idx] <- cor_Wtemp_ac
+            vec_all_Wcont_cor[vec_idx] <- cor_Wcont
+
             est_Wcont_ac <- ave_control_centrality(est_Wcont)
             orig_Wcont_ac <- current_regimes[["Regime1"]][["Wcont_ac"]]
             Wcont_senspec <- senspec(orig_Wcont,
                                      est_Wcont
             )
-            vec_all_Wcont_sen <- c(vec_all_Wcont_sen,
-                                   Wcont_senspec[["sensitivity"]]
-            )
-            vec_all_Wcont_spec <- c(vec_all_Wcont_spec,
-                                    Wcont_senspec[["specificity"]]
-            )
+            vec_all_Wcont_sen[vec_idx] <- Wcont_senspec[["sensitivity"]]
+            vec_all_Wcont_spec[vec_idx] <- Wcont_senspec[["specificity"]]
+
             cor_Wcont_ac <- cor(orig_Wcont_ac,
                                 est_Wcont_ac,
                                 method = "pearson"
             )
-            vec_all_Wcont_ac_cor <- c(vec_all_Wcont_ac_cor,
-                                      cor_Wcont_ac
-            )
+            vec_all_Wcont_ac_cor[vec_idx] <- cor_Wcont_ac
             MAE_Wcont <- calculate_MAE(orig_Wcont, est_Wcont)
-            vec_all_Wcont_MAE <- c(vec_all_Wcont_MAE, MAE_Wcont)
+            vec_all_Wcont_MAE[vec_idx] <- MAE_Wcont
             
             pair_Wtemp[[paste0("Regime", m)]] <- list("orig. Wtemp" = orig_Wtemp,
                                                       "est. Wtemp" = est_Wtemp,
@@ -490,8 +479,20 @@ for (t in seq_along(T)) {
           
           MSAR_level4[[paste0("Timeseries_", l)]] <- pair_Wtemp
         }
-        
-        
+
+        # PERFORMANCE: Trim pre-allocated vectors to actual used size
+        # This removes unused slots and NAs from failed model fits
+        vec_all_Wtemp_cor <- vec_all_Wtemp_cor[1:vec_idx]
+        vec_all_Wtemp_ac_cor <- vec_all_Wtemp_ac_cor[1:vec_idx]
+        vec_all_Wcont_cor <- vec_all_Wcont_cor[1:vec_idx]
+        vec_all_Wcont_ac_cor <- vec_all_Wcont_ac_cor[1:vec_idx]
+        vec_all_Wtemp_sen <- vec_all_Wtemp_sen[1:vec_idx]
+        vec_all_Wtemp_spec <- vec_all_Wtemp_spec[1:vec_idx]
+        vec_all_Wcont_sen <- vec_all_Wcont_sen[1:vec_idx]
+        vec_all_Wcont_spec <- vec_all_Wcont_spec[1:vec_idx]
+        vec_all_Wtemp_MAE <- vec_all_Wtemp_MAE[1:vec_idx]
+        vec_all_Wcont_MAE <- vec_all_Wcont_MAE[1:vec_idx]
+
         vec_all_Wcont_cor <- na.omit(vec_all_Wcont_cor)
         vec_all_Wcont_ac_cor <- na.omit(vec_all_Wcont_ac_cor)
         

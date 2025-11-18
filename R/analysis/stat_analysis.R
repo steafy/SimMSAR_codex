@@ -1,7 +1,12 @@
 ### Data preparation
 library(dplyr)
 ## Extract stats data from MSAR results list
-corr_list <- list()
+
+# PERFORMANCE: Pre-allocate list to avoid O(n²) list copying
+# Estimate max size conservatively (actual size may be smaller due to failed fits)
+max_size <- length(T) * length(Density) * length(N) * length(M) * 30 * max(M)
+corr_list <- vector("list", max_size)
+list_idx <- 0
 
 for (t in seq_along(T)) {
    for (density in seq_along(Density)) {
@@ -11,7 +16,8 @@ for (t in seq_along(T)) {
         for (ts in seq_along(models)) {
           for (r in seq_along(models[[ts]])) {
             result <- models[[ts]][[r]]
-              temp <- data.frame(
+            list_idx <- list_idx + 1
+            temp <- data.frame(
               Timesteps = T[t],
               Density = Density[density],
               Nodes = N[nodes],
@@ -22,14 +28,16 @@ for (t in seq_along(T)) {
               Wcont_corr = result[["corr. Wcont"]],
               Wcont_ac_corr = result[["corr. Wcont ac"]]
             )
-            corr_list <- append(corr_list, list(temp))
-           
+            corr_list[[list_idx]] <- temp
           }
         }
       }
     }
   }
 }
+
+# PERFORMANCE: Trim to actual size
+corr_list <- corr_list[1:list_idx]
 
 
 # Combine all dataframes

@@ -170,19 +170,22 @@ generate_timeseries <- function(Density,
         ts_level3 <- list()
         for (k in seq_along(M)) {
           ts_level4 <- list()
-          Rseq <- numeric()
           all_Wtemp_sd <- numeric()
           for (l in 1:n_ts) {
-            
+
             # Generate initial vector for timeseries
             init <- runif(N[j], min = 0, max = 5)
-            
+
             # Get dynamics for current timeseries
             dynamics <- DynamicsMatrices_list[[i]][[j]][[l]][[k]]
 
             ## Generate TS from Transmat
             # Generate transmat
             transmat <- generate_transmat(M[k], remain_lower, remain_upper)
+
+            # PERFORMANCE: Pre-allocate regime sequence vector
+            # This avoids O(n²) vector copying when growing with c()
+            Rseq <- integer(totTime[t] - 1)
 
             # Initialize state matrix
             X <- matrix(init, nrow = totTime[t], ncol = N[j])
@@ -191,12 +194,12 @@ generate_timeseries <- function(Density,
               # Set starting regime index
               if (m == 2) {
                 reg_index <- sample.int(M[k], 1, replace = TRUE)
-                Rseq <- reg_index
+                Rseq[1] <- reg_index
               }
 
               # Determine regime in next timestep from current timestep and transmat
               reg_index <- sample.int(M[k], 1, prob = transmat[reg_index, ])
-              Rseq <- c(Rseq, reg_index)
+              Rseq[m - 1] <- reg_index
 
               # Get dynamics for current regime
               curreg_mu <- dynamics[[reg_index]][["mu"]]
