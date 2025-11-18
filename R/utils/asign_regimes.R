@@ -1,5 +1,54 @@
-# Function to map estimated regimes on original regimes based on correlations
-
+#' Assign Estimated Regimes to True Regimes
+#'
+#' Maps estimated regimes to original (true) regimes based on maximum correlation
+#' matching. Solves the regime label-switching problem by finding the optimal
+#' one-to-one assignment that maximizes total correlation.
+#'
+#' @param cor_results Matrix of correlations between original and estimated regimes.
+#'   Rows represent original regimes, columns represent estimated regimes.
+#'   Typically correlations of vectorized network matrices (Wtemp or Wcont).
+#'
+#' @return Matrix with n rows (number of regimes) and 3 columns:
+#'   \describe{
+#'     \item{orig_Reg_No}{Original regime index (1 to n)}
+#'     \item{est_Reg_No}{Matched estimated regime index}
+#'     \item{Value}{Correlation value for this pairing}
+#'   }
+#'
+#' @details
+#' The function solves the assignment problem using a greedy algorithm:
+#'
+#' 1. **Sort**: Orders rows by their maximum correlation (descending)
+#'
+#' 2. **Sequential Assignment**: For each row (starting with highest max correlation):
+#'    \itemize{
+#'      \item Finds the column with highest correlation among unused columns
+#'      \item Assigns that pairing
+#'      \item Marks the column as used
+#'    }
+#'
+#' This greedy approach ensures:
+#' \itemize{
+#'   \item Each estimated regime is assigned to at most one true regime
+#'   \item Regimes with clearer matches (higher correlations) are assigned first
+#'   \item The label-switching problem in mixture models is resolved
+#' }
+#'
+#' @note
+#' This is critical for MSAR models because regime labels are arbitrary.
+#' The EM algorithm may converge to a solution where estimated regime 1
+#' corresponds to true regime 2, etc. This function corrects that.
+#'
+#' @examples
+#' \dontrun{
+#' # Correlation matrix: rows = true regimes, cols = estimated regimes
+#' cor_matrix <- matrix(c(0.85, 0.35, 0.40, 0.80), 2, 2)
+#' assignments <- asign_regimes(cor_matrix)
+#' # Result: true regime 1 -> est regime 1 (0.85)
+#' #         true regime 2 -> est regime 2 (0.80)
+#' }
+#'
+#' @export
 asign_regimes <- function(cor_results) {
   
   # Add column with indices for the original regimes to correlation results

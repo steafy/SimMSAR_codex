@@ -1,3 +1,117 @@
+#' Estimate MSAR Models from Time Series Data
+#'
+#' Main estimation pipeline that fits Markov-Switching Autoregressive (MSAR) models
+#' to time series data and compares estimated network dynamics to true dynamics.
+#' Processes multiple conditions in parallel and computes recovery statistics.
+#'
+#' @param Density Numeric vector. Edge densities used in data generation.
+#' @param N Integer vector. Numbers of nodes in networks.
+#' @param M Integer vector. Numbers of regimes.
+#' @param T Integer vector. Time series lengths.
+#' @param n_ts Integer. Number of time series per condition.
+#' @param order Integer. AR order for the VAR model (typically 1).
+#' @param MaxIter Integer. Maximum EM algorithm iterations.
+#' @param verbose Logical. If TRUE, prints detailed progress messages.
+#' @param min_edg_val Numeric. Minimum edge threshold - values below are set to zero.
+#' @param Timeseries_data List. Output from \code{generate_timeseries} containing
+#'   simulated data and true dynamics.
+#'
+#' @return A nested list structure containing:
+#'   \describe{
+#'     \item{MSAR_models}{List of estimated models for each time series, containing:
+#'       \itemize{
+#'         \item orig. Wtemp: True temporal network
+#'         \item est. Wtemp: Estimated temporal network
+#'         \item corr. Wtemp: Correlation between true and estimated Wtemp
+#'         \item sen. Wtemp: Sensitivity (true positive rate)
+#'         \item spec. Wtemp: Specificity (true negative rate)
+#'         \item MAE Wtemp: Mean absolute error for Wtemp
+#'         \item orig./est. Wtemp ac: Average controllability for true/estimated
+#'         \item corr. Wtemp ac: Correlation of average controllability
+#'         \item Similar metrics for Wcont (contemporaneous network)
+#'       }
+#'     }
+#'     \item{Stats}{Aggregated statistics across all time series:
+#'       \itemize{
+#'         \item Mean, SD, Median, Min, Max for each metric
+#'         \item N: Number of successfully estimated models
+#'       }
+#'     }
+#'   }
+#'
+#'   The list is nested by: Timesteps > Density > Nodes > Regimes > {MSAR_models, Stats}
+#'
+#' @details
+#' The function processes each time series through the following pipeline:
+#'
+#' 1. **Normalization**: Applies nonparanormal transformation via \code{huge.npn}
+#'
+#' 2. **Model Estimation**: Fits MSAR model using \code{init_and_fit.MSAR_Lasso_2}
+#'    with EM algorithm and LASSO regularization
+#'
+#' 3. **Network Recovery**:
+#'    \itemize{
+#'      \item Extracts Beta (temporal) and Sigma (covariance) from fitted model
+#'      \item Computes Kappa = Sigma^{-1} (precision matrix)
+#'      \item Derives Wcont from Kappa: Wcont[i,j] = -Kappa[i,j] / sqrt(Kappa[i,i] * Kappa[j,j])
+#'      \item Derives Wtemp from Beta, Sigma, Kappa
+#'      \item Applies min_edg_val threshold to estimated networks
+#'    }
+#'
+#' 4. **Regime Assignment**: For multi-regime models, matches estimated to true
+#'    regimes based on maximum Wtemp correlations using \code{asign_regimes}
+#'
+#' 5. **Comparison Metrics**: Computes for each regime pair:
+#'    \itemize{
+#'      \item Correlation: Pearson correlation between vectorized networks
+#'      \item Sensitivity/Specificity: Edge detection accuracy
+#'      \item MAE: Mean absolute error of edge weights
+#'      \item Controllability correlation: For network control metrics
+#'    }
+#'
+#' 6. **Aggregation**: Summarizes metrics across all time series
+#'
+#' Failed estimations (NULL fits or zero-variance networks) are skipped with warning messages.
+#'
+#' @note
+#' Dependencies are loaded centrally via R/dependencies.R
+#' Required packages: huge, NHMSAR, dplyr, progress
+#'
+#' The function displays progress bars for both network generation and model estimation.
+#'
+#' @seealso
+#' \code{\link{generate_timeseries}} for generating input data
+#' \code{\link{init_and_fit.MSAR_Lasso_2}} for model fitting
+#' \code{\link{asign_regimes}} for regime matching
+#' \code{\link{senspec}} for sensitivity/specificity
+#' \code{\link{calculate_MAE}} for mean absolute error
+#' \code{\link{summarize_cor}} for aggregating statistics
+#'
+#' @examples
+#' \dontrun{
+#' # Generate data
+#' ts_data <- generate_timeseries(
+#'   Density = 0.3, N = 4, M = 2, T = 1000,
+#'   n_ts = 10, warmup = 50, totTime = 1050,
+#'   mean_rep = 10, sd_rep = 2,
+#'   min_edg_val = 0.05, max_edg_val = 1,
+#'   remain_lower = 0.33, remain_upper = 0.66
+#' )
+#'
+#' # Estimate models
+#' results <- estimate_MSAR(
+#'   Density = 0.3, N = 4, M = 2, T = 1000,
+#'   n_ts = 10, order = 1, MaxIter = 200,
+#'   verbose = FALSE, min_edg_val = 0.05,
+#'   Timeseries_data = ts_data
+#' )
+#'
+#' # Access statistics
+#' stats <- results[["1000_Timesteps"]][["Density_30%"]][["4_Nodes"]][["2_Regimes"]][["Stats"]]
+#' print(stats$Wtemp_corr)  # Mean correlation for temporal network
+#' }
+#'
+#' @export
 # Dependencies are loaded centrally via R/dependencies.R
 # Required packages: huge, NHMSAR, dplyr, progress
 
@@ -14,7 +128,6 @@ source("R/utils/calculate_MAE.R")
 
 
 
-## Estimate network dynamics from timeseries data using NHMSAR
 estimate_MSAR <- function(Density, N, M, T, n_ts, order, MaxIter, verbose, min_edg_val, Timeseries_data) {
 
 # Setup progressbar
