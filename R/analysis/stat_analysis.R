@@ -1,6 +1,13 @@
-# Dependencies are loaded centrally via R/dependencies.R
-# Required packages: dplyr, dunn.test, lmPerm, lme4, lmerTest, sjPlot, effects,
-#                    knitr, kableExtra, xtable, ggplot2, cowplot
+# =============================================================================
+# Statistical Analysis Script for MSAR Models
+# =============================================================================
+# This is a standalone analysis script that requires all packages to be loaded.
+# It should be run AFTER the main MSAR estimation pipeline.
+
+# Load dependencies
+if (!exists("ALL_PACKAGES") || !all(c("dplyr", "ggplot2") %in% loadedNamespaces())) {
+  source("R/dependencies.R")
+}
 
 ### Data preparation
 ## Extract stats data from MSAR results list

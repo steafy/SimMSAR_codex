@@ -1,5 +1,13 @@
-# Dependencies are loaded centrally via R/dependencies.R
-# Required packages: plotly, dplyr, RColorBrewer
+# =============================================================================
+# 3D Surface Plot Visualization Script for MSAR Models
+# =============================================================================
+# This is a standalone visualization script that requires all packages to be loaded.
+# It should be run AFTER the main MSAR estimation pipeline.
+
+# Load dependencies
+if (!exists("ALL_PACKAGES") || !all(c("plotly", "dplyr") %in% loadedNamespaces())) {
+  source("R/dependencies.R")
+}
 
 ## Extract stats from results list to dataframe
 # PERFORMANCE: Pre-allocate list to avoid O(n²) list copying
