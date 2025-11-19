@@ -58,7 +58,7 @@ warmup <- 50                  # Number of warmup time steps (discarded from anal
 
 totTime <- T + warmup         # Total time steps including warmup
 
-n_ts <- 10                    # Number of time series to generate per condition
+n_ts <- 5                    # Number of time series to generate per condition
                               # Higher = more statistical power but slower
 
 # -----------------------------------------------------------------------------
@@ -92,8 +92,11 @@ if (save_output && !dir.exists(output_dir)) {
 # -----------------------------------------------------------------------------
 # Reproducibility
 # -----------------------------------------------------------------------------
-# Uncomment and set seed for reproducible results
-# set.seed(83742)
+# Set seed for reproducible results
+# IMPORTANT: This must be set BEFORE generate_timeseries() is called
+# All random operations (network generation, time series simulation,
+# model initialization) will be reproducible with this single seed
+set.seed(83742)
 
 # =============================================================================
 # PARAMETER SUMMARY
@@ -211,11 +214,17 @@ if (save_output) {
   saveRDS(CONFIG, config_filename)
   cat(sprintf("✓ Saved configuration: %s\n", config_filename))
 
+  # Save session info for reproducibility
+  session_filename <- file.path(output_dir, sprintf("sessionInfo_%s.txt", timestamp))
+  writeLines(capture.output(sessionInfo()), session_filename)
+  cat(sprintf("✓ Saved session info: %s\n", session_filename))
+
   cat("\n")
   cat("═══════════════════════════════════════════════════════════════\n")
   cat("  Analysis Complete!\n")
   cat("═══════════════════════════════════════════════════════════════\n")
   cat(sprintf("All results saved to: %s/\n", output_dir))
+  cat(sprintf("Session info saved for reproducibility\n"))
   cat("\n")
 } else {
   cat("Results not saved (save_output = FALSE)\n")
