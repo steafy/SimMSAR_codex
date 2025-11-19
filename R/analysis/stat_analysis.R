@@ -11,7 +11,7 @@ if (!exists("ALL_PACKAGES") || !all(c("dplyr", "ggplot2") %in% loadedNamespaces(
 
 ### Data preparation
 ## Extract stats data from MSAR results list
-
+MSAR_models <- MSAR_dynamics_list
 # PERFORMANCE: Pre-allocate list to avoid O(n²) list copying
 # Estimate max size conservatively (actual size may be smaller due to failed fits)
 max_size <- length(T) * length(Density) * length(N) * length(M) * 30 * max(M)
@@ -163,40 +163,103 @@ omissions_per <- (omissions / 9720) * 100
 ## Calculate dunn-test to compare N across factorlevels
 n_means <- list()
 dunn_results <- list()
-for (i in 1:4) {
-  var <- colnames(aggr_factors)[i]
-  val <- unique(aggr_factors[[var]])
 
-  # Calculate means for each level
-  for (j in seq_along(val)) {
-    x <- val[j]
-    subset <- aggr_factors %>% filter(.data[[var]] == x)
-    n_means[[paste(x, var)]] <- mean(subset$N)
+# First check: Is there any variance in N at all?
+if (length(unique(aggr_factors$N)) == 1) {
+  message(sprintf("Note: All conditions have the same number of successful fits (N = %d).",
+                  unique(aggr_factors$N)))
+  message("Kruskal-Wallis and Dunn tests are not applicable - no variance to test.")
+
+  # Still calculate means
+  for (i in 1:4) {
+    var <- colnames(aggr_factors)[i]
+    val <- unique(aggr_factors[[var]])
+    for (j in seq_along(val)) {
+      x <- val[j]
+      subset <- aggr_factors %>% filter(.data[[var]] == x)
+      n_means[[paste(x, var)]] <- mean(subset$N)
+    }
+    dunn_results[[var]] <- list(
+      Kruskal = "Not applicable - no variance in N",
+      Dunn = "Not applicable - no variance in N"
+    )
   }
+} else {
+  # There is variance - proceed with tests
+  for (i in 1:4) {
+    var <- colnames(aggr_factors)[i]
+    val <- unique(aggr_factors[[var]])
 
-  # Only perform statistical tests if there are multiple groups to compare
-  if (length(val) > 1) {
-    kw <- kruskal.test(aggr_factors$N, aggr_factors[[var]])
-    dunn <- dunn.test(aggr_factors$N, aggr_factors[[var]], method = "bonferroni")
-    dunn_matrix <- data.frame(
-      comp = dunn$comparisons,
-      Z_val = dunn$Z,
-      p_val = dunn$P,
-      p.adj = round(dunn$P.adjusted, 4)
-    )
-    dunn_matrix <- dunn_matrix[order(dunn_matrix$p.adj), ]
-    dunn_results[[var]] <- list(
-      Kruskal = kw,
-      Dunn = dunn_matrix
-    )
-  } else {
-    # Only one group - tests not applicable
-    message(sprintf("Skipping Kruskal-Wallis and Dunn tests for '%s' - only one group (%s)",
-                    var, val))
-    dunn_results[[var]] <- list(
-      Kruskal = "Not applicable - only one group",
-      Dunn = "Not applicable - only one group"
-    )
+    # Calculate means for each level
+    for (j in seq_along(val)) {
+      x <- val[j]
+      subset <- aggr_factors %>% filter(.data[[var]] == x)
+      n_means[[paste(x, var)]] <- mean(subset$N)
+    }
+
+    # Only perform statistical tests if there are multiple groups to compare
+    if (length(val) > 1) {
+      # Check if there's variance within this specific factor
+      group_means <- tapply(aggr_factors$N, aggr_factors[[var]], mean)
+      if (length(unique(group_means)) == 1) {
+        message(sprintf("Skipping tests for '%s' - all groups have same mean N (%.1f)",
+                        var, group_means[1]))
+        dunn_results[[var]] <- list(
+          Kruskal = "Not applicable - no between-group variance",
+          Dunn = "Not applicable - no between-group variance"
+        )
+        next
+      }
+
+      # Run tests with error handling
+      kw_result <- tryCatch({
+        kruskal.test(aggr_factors$N, aggr_factors[[var]])
+      }, error = function(e) {
+        message(sprintf("Error in Kruskal-Wallis for '%s': %s", var, e$message))
+        return(NULL)
+      }, warning = function(w) {
+        message(sprintf("Warning in Kruskal-Wallis for '%s': %s", var, w$message))
+        return(NULL)
+      })
+
+      dunn_result <- tryCatch({
+        dunn.test(aggr_factors$N, aggr_factors[[var]], method = "bonferroni")
+      }, error = function(e) {
+        message(sprintf("Error in Dunn test for '%s': %s", var, e$message))
+        return(NULL)
+      }, warning = function(w) {
+        message(sprintf("Warning in Dunn test for '%s': %s", var, w$message))
+        return(NULL)
+      })
+
+      # Store results (even if NULL, for debugging)
+      if (!is.null(kw_result) && !is.null(dunn_result)) {
+        dunn_matrix <- data.frame(
+          comp = dunn_result$comparisons,
+          Z_val = dunn_result$Z,
+          p_val = dunn_result$P,
+          p.adj = round(dunn_result$P.adjusted, 4)
+        )
+        dunn_matrix <- dunn_matrix[order(dunn_matrix$p.adj), ]
+        dunn_results[[var]] <- list(
+          Kruskal = kw_result,
+          Dunn = dunn_matrix
+        )
+      } else {
+        dunn_results[[var]] <- list(
+          Kruskal = if (is.null(kw_result)) "Test failed" else kw_result,
+          Dunn = if (is.null(dunn_result)) "Test failed" else dunn_result
+        )
+      }
+    } else {
+      # Only one group - tests not applicable
+      message(sprintf("Skipping Kruskal-Wallis and Dunn tests for '%s' - only one group (%s)",
+                      var, val))
+      dunn_results[[var]] <- list(
+        Kruskal = "Not applicable - only one group",
+        Dunn = "Not applicable - only one group"
+      )
+    }
   }
 }
 
