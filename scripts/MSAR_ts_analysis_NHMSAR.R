@@ -20,17 +20,17 @@ source("R/estimation/estimate_MSAR.R")
 # -----------------------------------------------------------------------------
 # Network Structure Parameters
 # -----------------------------------------------------------------------------
-N <- c(4)                     # Number of nodes in the network
+N <- c(4, 6)                  # Number of nodes in the network
                               # Can be a vector for multiple conditions: c(3, 4, 5)
 
-Density <- c(0.25)            # Network edge density (proportion of possible edges)
+Density <- c(0.25, 0.5)       # Network edge density (proportion of possible edges)
                               # Range: 0 to 1
                               # Can be a vector: c(0.2, 0.5, 0.8)
 
 # -----------------------------------------------------------------------------
 # Regime Parameters
 # -----------------------------------------------------------------------------
-M <- c(2)                     # Number of regimes (network states)
+M <- c(2, 3)                  # Number of regimes (network states)
                               # Can be a vector: c(2, 3, 4)
 
 remain_lower <- 0.33          # Lower bound for probability to stay in same regime
@@ -50,7 +50,7 @@ max_edg_val <- 1              # Maximum absolute edge weight in networks
 # -----------------------------------------------------------------------------
 # Time Series Parameters
 # -----------------------------------------------------------------------------
-T <- c(3500)                  # Number of time steps per time series
+T <- c(2000, 3000)            # Number of time steps per time series
                               # Can be a vector: c(1000, 3500, 5000)
 
 warmup <- 50                  # Number of warmup time steps (discarded from analysis)
@@ -58,7 +58,7 @@ warmup <- 50                  # Number of warmup time steps (discarded from anal
 
 totTime <- T + warmup         # Total time steps including warmup
 
-n_ts <- 30                    # Number of time series to generate per condition
+n_ts <- 10                    # Number of time series to generate per condition
                               # Higher = more statistical power but slower
 
 # -----------------------------------------------------------------------------
