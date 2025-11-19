@@ -9,13 +9,13 @@ SimMSAR_claude/
 ├── R/                          # R source code
 │   ├── estimation/             # MSAR model estimation functions
 │   │   ├── estimate_MSAR.R            # Main estimation pipeline
-│   │   ├── fit.MSAR_revised_2.R       # Model fitting with EM algorithm
-│   │   ├── init.theta.MSAR_revised_2.R # Parameter initialization
-│   │   ├── init_and_fit.MSAR_Lasso_2.R # Combined init & fit with retry
-│   │   ├── as.thetaMSAR_revised_2.R   # Parameter object conversion
-│   │   ├── Mstep.hh.lasso.MSAR_patched_2.R  # M-step with LASSO
-│   │   ├── Mstep.hh.reduct.MSAR_patched_2.R # M-step with reduction
-│   │   └── EM_converged_patched_2.R   # Convergence checking
+│   │   ├── fit_msar.R                 # Model fitting with EM algorithm
+│   │   ├── init_theta_msar.R          # Parameter initialization
+│   │   ├── init_and_fit_msar_lasso.R  # Combined init & fit with retry
+│   │   ├── as_theta_msar.R            # Parameter object conversion
+│   │   ├── mstep_hh_lasso_msar.R      # M-step with LASSO
+│   │   ├── mstep_hh_reduct_msar.R     # M-step with reduction
+│   │   └── em_converged.R             # Convergence checking
 │   ├── generation/             # Data generation functions
 │   │   ├── generate_timeseries.R      # Main timeseries generation
 │   │   ├── generate_netdyn.R          # Network dynamics generation
@@ -185,8 +185,8 @@ Results are saved as:
 ## Notes
 
 - All source paths are relative to the project root directory
-- The `_2` suffix on estimation files indicates version 2 (current/active version)
-- Version 1 files are archived in `archive/old_versions/`
+- All functions use consistent snake_case naming convention
+- Deprecated version 1 files are archived in `archive/old_versions/`
 - Large data files (`.rds`) are gitignored to keep repository size manageable
 
 ## License

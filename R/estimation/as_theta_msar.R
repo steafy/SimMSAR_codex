@@ -56,8 +56,8 @@
 #' }
 #'
 #' @seealso
-#' \code{\link{init.theta.MSAR_revised_2}} which produces initial thetaMSAR objects
-#' \code{\link{fit.MSAR_revised_2}} which calls this after each M-step
+#' \code{\link{init_theta_msar}} which produces initial thetaMSAR objects
+#' \code{\link{fit_msar}} which calls this after each M-step
 #'
 #' @examples
 #' \dontrun{
@@ -81,7 +81,7 @@
 #' }
 #'
 #' @export
-as.thetaMSAR_revised_2 <-
+as_theta_msar <-
 function(x,label='HH',regime_names=NULL,ncov.emis=ncov.emis,ncov.trans=ncov.trans) {
   if (!NHMSAR:::is.thetaMSAR(x)) {
     stop('as.thetaMSAR: your input is not like a theta at all')

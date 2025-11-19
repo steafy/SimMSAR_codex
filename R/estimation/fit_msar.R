@@ -5,7 +5,7 @@
 #' configurations including homogeneous/non-homogeneous transitions and emissions.
 #'
 #' @param data 3D array of time series data (time × samples × variables).
-#' @param theta Initial parameter object from \code{init.theta.MSAR_revised_2}.
+#' @param theta Initial parameter object from \code{init_theta_msar}.
 #' @param MaxIter Integer. Maximum EM iterations. Default: 100.
 #' @param eps Numeric. Convergence threshold for log-likelihood change. Default: 1e-5.
 #' @param verbose Logical. Print iteration progress. Default: TRUE.
@@ -55,8 +55,8 @@
 #' 2. **M-step**: Updates parameters to maximize expected log-likelihood. Choice depends on:
 #'    \itemize{
 #'      \item **label='HH'** (Homogeneous): \code{Mstep.hh.MSAR} or specialized versions
-#'      \item **penalty="LASSO"**: First iteration uses \code{Mstep.hh.lasso.MSAR_patched_2},
-#'        subsequent iterations use \code{Mstep.hh.reduct.MSAR_patched_2}
+#'      \item **penalty="LASSO"**: First iteration uses \code{mstep_hh_lasso_msar},
+#'        subsequent iterations use \code{mstep_hh_reduct_msar}
 #'      \item **penalty="ridge"**: Ridge regression penalty
 #'      \item **penalty="SCAD"**: Smoothly Clipped Absolute Deviation penalty
 #'    }
@@ -76,27 +76,27 @@
 #'
 #' @note
 #' \itemize{
-#'   \item Requires initial parameters from \code{init.theta.MSAR_revised_2}
+#'   \item Requires initial parameters from \code{init_theta_msar}
 #'   \item LASSO is the standard penalty for network recovery applications
 #'   \item Convergence is not guaranteed; may stop at local optimum
 #'   \item Log-likelihood should be non-decreasing (EM guarantee)
 #' }
 #'
 #' @seealso
-#' \code{\link{init.theta.MSAR_revised_2}} for initialization
-#' \code{\link{init_and_fit.MSAR_Lasso_2}} for combined init+fit with retry
-#' \code{\link{Mstep.hh.lasso.MSAR_patched_2}} for LASSO M-step
-#' \code{\link{Mstep.hh.reduct.MSAR_patched_2}} for reduced M-step
-#' \code{\link{EM_converged_patched_2}} for convergence checking
+#' \code{\link{init_theta_msar}} for initialization
+#' \code{\link{init_and_fit_msar_lasso}} for combined init+fit with retry
+#' \code{\link{mstep_hh_lasso_msar}} for LASSO M-step
+#' \code{\link{mstep_hh_reduct_msar}} for reduced M-step
+#' \code{\link{em_converged}} for convergence checking
 #'
 #' @examples
 #' \dontrun{
 #' # Initialize parameters
 #' data_array <- array(rnorm(1000 * 4), dim = c(1000, 1, 4))
-#' theta_init <- init.theta.MSAR_revised_2(data_array, M = 2, order = 1)
+#' theta_init <- init_theta_msar(data_array, M = 2, order = 1)
 #'
 #' # Fit with LASSO
-#' fit <- fit.MSAR_revised_2(
+#' fit <- fit_msar(
 #'   data = data_array,
 #'   theta = theta_init,
 #'   penalty = "LASSO",
@@ -111,12 +111,12 @@
 #' }
 #'
 #' @export
-source("R/estimation/as.thetaMSAR_revised_2.R")
-source("R/estimation/Mstep.hh.lasso.MSAR_patched_2.R")
-source("R/estimation/Mstep.hh.reduct.MSAR_patched_2.R")
-source("R/estimation/EM_converged_patched_2.R")
+source("R/estimation/as_theta_msar.R")
+source("R/estimation/mstep_hh_lasso_msar.R")
+source("R/estimation/mstep_hh_reduct_msar.R")
+source("R/estimation/em_converged.R")
 
-fit.MSAR_revised_2 <-
+fit_msar <-
 function(
     data,theta,MaxIter=100,eps=1e-5,verbose=TRUE,
     covar.emis=NULL,covar.trans=NULL,method=NULL,constraints=FALSE,reduct=FALSE,K=NULL,d.y=NULL,ARfix=FALSE,penalty=FALSE,sigma.diag=FALSE,sigma.equal=FALSE,lambda1=.1,lambda2=.1,a=3.7,...
@@ -174,7 +174,7 @@ function(
   loglik = FB$loglik
   previous_loglik <- FB$loglik-1000 
   ll_history = NULL
-  converged = EM_converged_patched_2(0,2*eps,eps);
+  converged = em_converged(0,2*eps,eps);
   par = NULL
   while (converged[1]==0 && cnt < MaxIter) {
     cnt <- cnt+1
@@ -201,9 +201,9 @@ function(
         #
         
         if (cnt>1) {
-          par = Mstep.hh.reduct.MSAR_patched_2(data,theta,FB,sigma.diag=sigma.diag)
+          par = mstep_hh_reduct_msar(data,theta,FB,sigma.diag=sigma.diag)
         } 
-        else {par = Mstep.hh.lasso.MSAR_patched_2(data,theta,FB)}
+        else {par = mstep_hh_lasso_msar(data,theta,FB)}
       }
       else if (penalty=="SCAD") {
         par = NHMSAR:::Mstep.hh.SCAD.MSAR(data,theta,FB,penalty="SCAD",lambda1=lambda1,lambda2=lambda2,par=par)
@@ -217,7 +217,7 @@ function(
         # call PATCHED !!!
         #
         
-        par = Mstep.hh.reduct.MSAR_patched_2(data,theta,FB,sigma.diag=sigma.diag)
+        par = mstep_hh_reduct_msar(data,theta,FB,sigma.diag=sigma.diag)
       }
       
       if (order>0) {
@@ -253,10 +253,10 @@ function(
       
     }
     ll_history[cnt] = loglik
-    converged = EM_converged_patched_2(loglik, previous_loglik, eps)
+    converged = em_converged(loglik, previous_loglik, eps)
     previous_loglik = loglik
     attributes(theta) = att.theta
-    theta = as.thetaMSAR_revised_2(theta,label=label,ncov.emis = ncov.emis,ncov.trans=ncov.trans)             
+    theta = as_theta_msar(theta,label=label,ncov.emis = ncov.emis,ncov.trans=ncov.trans)             
     
     
     # -----------------------------
@@ -297,7 +297,7 @@ function(
     for (j in 1:M) {theta$par.emis[[j]] = tmp[[i.tr[j]]]}
     }
     if (substr(label,1,1)=="N") {theta$par.trans = theta$par.trans[i.tr,]} 
-    theta = as.thetaMSAR_revised_2(theta,label=label,ncov.emis = ncov.emis,ncov.trans=ncov.trans)
+    theta = as_theta_msar(theta,label=label,ncov.emis = ncov.emis,ncov.trans=ncov.trans)
     FB$probS = FB$probS[,,i.tr]
   }
   

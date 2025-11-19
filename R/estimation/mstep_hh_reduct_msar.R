@@ -9,7 +9,7 @@
 #' @param sigma.diag Logical. Force diagonal covariance matrices. Default: FALSE.
 #' @param verbose Logical. Print progress messages. Default: FALSE.
 #'
-#' @return List of updated parameters with same structure as \code{Mstep.hh.lasso.MSAR_patched_2}.
+#' @return List of updated parameters with same structure as \code{mstep_hh_lasso_msar}.
 #'
 #' @details
 #' **Reduced Estimation Strategy**:
@@ -26,18 +26,18 @@
 #'
 #' @note
 #' \itemize{
-#'   \item Used in iterations 2+ when penalty="LASSO" in \code{fit.MSAR_revised_2}
+#'   \item Used in iterations 2+ when penalty="LASSO" in \code{fit_msar}
 #'   \item Assumes theta already has sparse structure from LASSO
 #'   \item If sigma.diag=TRUE, estimates only diagonal elements of covariance
 #' }
 #'
 #' @seealso
-#' \code{\link{fit.MSAR_revised_2}} which calls this function
-#' \code{\link{Mstep.hh.lasso.MSAR_patched_2}} for initial LASSO M-step
+#' \code{\link{fit_msar}} which calls this function
+#' \code{\link{mstep_hh_lasso_msar}} for initial LASSO M-step
 #'
 #' @keywords internal
 #' @export
-Mstep.hh.reduct.MSAR_patched_2 <-
+mstep_hh_reduct_msar <-
   function(data, theta, FB, sigma.diag = FALSE, verbose = FALSE)  {
     
     T = dim(data)[1]

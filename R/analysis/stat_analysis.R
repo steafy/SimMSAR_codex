@@ -1,5 +1,8 @@
+# Dependencies are loaded centrally via R/dependencies.R
+# Required packages: dplyr, dunn.test, lmPerm, lme4, lmerTest, sjPlot, effects,
+#                    knitr, kableExtra, xtable, ggplot2, cowplot
+
 ### Data preparation
-library(dplyr)
 ## Extract stats data from MSAR results list
 
 # PERFORMANCE: Pre-allocate list to avoid O(n²) list copying
@@ -150,8 +153,7 @@ omissions_per <- (omissions / 9720) * 100
 
 
 ## Calculate mean no. of estimated models (N) for factorlevels
-## Calculate dunn-test to compare N across factorlevels 
-library(dunn.test)
+## Calculate dunn-test to compare N across factorlevels
 n_means <- list()
 dunn_results <- list()
 for (i in 1:4) {
@@ -216,8 +218,6 @@ for (i in 1:10) {
 ### Calculate inferential statistics to describe models
 
 ## Calculate PERMANOVA
-library(lmPerm)
-
 # Specify dependent and independent variables
 dependent_vars <- colnames(corr_results)[8:11]
 independent_vars <- colnames(corr_results)[2:5]
@@ -270,11 +270,6 @@ for (dep_var in names(permanova_results)) {
 
 
 ###################################
-library(lme4)
-library(lmerTest)
-library(sjPlot)     
-library(effects)
-
 ### Calculate a linear mixed model
 # Scale factors
 corr_results <- corr_results %>%
@@ -311,11 +306,7 @@ linear_mixed_models[[col_name]] <- lmm
 }
 
 
-
-library(knitr)
-library(kableExtra)
-
-# Beispiel: Ausgabe der Ergebnisse für jedes Modell in der Liste
+# Export results for each model in the list
 for (name in names(linear_mixed_models)) {
   tab <- linear_mixed_models[[name]]
   kable(tab, caption = paste("Ergebnisse für", name), format = "html") %>%
@@ -324,8 +315,6 @@ for (name in names(linear_mixed_models)) {
 }
 
 
-
-library(xtable)
 for (name in names(linear_mixed_models)) {
   tab <- linear_mixed_models[[name]]
   print(xtable(tab, caption = paste("Ergebnisse für", name)),
@@ -333,11 +322,7 @@ for (name in names(linear_mixed_models)) {
 }
 
 #######################################
-### Make lineplot panels for each variable 
-
-library(ggplot2)
-library(dplyr)
-library(cowplot)
+### Make lineplot panels for each variable
 
 # Set variables to plot
 cols <- colnames(corr_results)[8:11]

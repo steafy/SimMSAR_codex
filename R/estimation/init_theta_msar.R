@@ -62,9 +62,9 @@
 #' }
 #'
 #' @seealso
-#' \code{\link{fit.MSAR_revised_2}} for EM fitting using these initial values
-#' \code{\link{init_and_fit.MSAR_Lasso_2}} which calls this function
-#' \code{\link{as.thetaMSAR_revised_2}} for converting parameter lists
+#' \code{\link{fit_msar}} for EM fitting using these initial values
+#' \code{\link{init_and_fit_msar_lasso}} which calls this function
+#' \code{\link{as_theta_msar}} for converting parameter lists
 #'
 #' @examples
 #' \dontrun{
@@ -72,7 +72,7 @@
 #' data_array <- array(rnorm(1000 * 4), dim = c(1000, 1, 4))
 #'
 #' # Initialize 2-regime VAR(1) model
-#' theta_init <- init.theta.MSAR_revised_2(
+#' theta_init <- init_theta_msar(
 #'   data = data_array,
 #'   M = 2,
 #'   order = 1,
@@ -90,7 +90,7 @@
 # Required packages: NHMSAR
 
 
-init.theta.MSAR_revised_2 <- function (data, ..., M, order, regime_names = NULL, nh.emissions = NULL,
+init_theta_msar <- function (data, ..., M, order, regime_names = NULL, nh.emissions = NULL,
                                      nh.transitions = NULL, label = NULL, ncov.emis = 0, ncov.trans = 0,
                                      cl.init = "mean",
                                      verbose = FALSE) 
@@ -311,7 +311,7 @@ init.theta.MSAR_revised_2 <- function (data, ..., M, order, regime_names = NULL,
   attr(theta,'n_par') <- n_par 
   attr(theta,'emis.linear') <- emis.linear
   
-  theta=as.thetaMSAR_revised_2(theta,label=label,ncov.emis=ncov.emis,ncov.trans=ncov.trans)
+  theta=as_theta_msar(theta,label=label,ncov.emis=ncov.emis,ncov.trans=ncov.trans)
   #class(theta) <- "MSAR"
   #theta$call <- match.call()
   return(theta)

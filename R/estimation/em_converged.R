@@ -47,11 +47,11 @@
 #'   \item Typical threshold: 1e-4 to 1e-6
 #'   \item Smaller threshold = stricter convergence = more iterations
 #'   \item Log-likelihood decrease suggests numerical instability
-#'   \item Used internally by \code{fit.MSAR_revised_2}
+#'   \item Used internally by \code{fit_msar}
 #' }
 #'
 #' @seealso
-#' \code{\link{fit.MSAR_revised_2}} which uses this function to check convergence
+#' \code{\link{fit_msar}} which uses this function to check convergence
 #'
 #' @examples
 #' \dontrun{
@@ -73,7 +73,7 @@
 #' }
 #'
 #' @export
-EM_converged_patched_2 <-
+em_converged <-
 function(loglik, previous_loglik, threshold = 1e-4, verbose = FALSE) {
 
   converged = 0;

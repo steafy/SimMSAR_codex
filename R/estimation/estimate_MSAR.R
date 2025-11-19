@@ -46,7 +46,7 @@
 #'
 #' 1. **Normalization**: Applies nonparanormal transformation via \code{huge.npn}
 #'
-#' 2. **Model Estimation**: Fits MSAR model using \code{init_and_fit.MSAR_Lasso_2}
+#' 2. **Model Estimation**: Fits MSAR model using \code{init_and_fit_msar_lasso}
 #'    with EM algorithm and LASSO regularization
 #'
 #' 3. **Network Recovery**:
@@ -81,7 +81,7 @@
 #'
 #' @seealso
 #' \code{\link{generate_timeseries}} for generating input data
-#' \code{\link{init_and_fit.MSAR_Lasso_2}} for model fitting
+#' \code{\link{init_and_fit_msar_lasso}} for model fitting
 #' \code{\link{asign_regimes}} for regime matching
 #' \code{\link{senspec}} for sensitivity/specificity
 #' \code{\link{calculate_MAE}} for mean absolute error
@@ -116,9 +116,9 @@
 # Required packages: huge, NHMSAR, dplyr, progress
 
 # Load functions from NHMSAR
-source("R/estimation/fit.MSAR_revised_2.R")
-source("R/estimation/init.theta.MSAR_revised_2.R")
-source("R/estimation/init_and_fit.MSAR_Lasso_2.R")
+source("R/estimation/fit_msar.R")
+source("R/estimation/init_theta_msar.R")
+source("R/estimation/init_and_fit_msar_lasso.R")
 
 # Load functions to assign and compare regime dynamics
 source("R/utils/asign_regimes.R")
@@ -205,7 +205,7 @@ for (t in seq_along(T)) {
                                          dim = c(timesteps, N.samples, d))
           
           # Estimate MSAR models
-          result <- init_and_fit.MSAR_Lasso_2(
+          result <- init_and_fit_msar_lasso(
             data = current_ts_norm_array,
             M = M[k],
             order = order,

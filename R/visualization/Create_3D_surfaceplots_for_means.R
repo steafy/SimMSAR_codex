@@ -1,5 +1,5 @@
-library(plotly)
-
+# Dependencies are loaded centrally via R/dependencies.R
+# Required packages: plotly, dplyr, RColorBrewer
 
 ## Extract stats from results list to dataframe
 # PERFORMANCE: Pre-allocate list to avoid O(n²) list copying
@@ -57,12 +57,7 @@ MSAR_results$N <- MSAR_results$N / MSAR_results$Regimes
 scale_factor <- 1
 x_offset <- 20
 
-## Funktion zum Erstellen von Linienplots
-library(plotly)
-library(dplyr)
-library(RColorBrewer)
-
-# Funktion zum Erstellen von Linienplots
+# Function to create line plots
 line_plot <- function(df, mean_col, sd_col, regime, scale_factor, x_offset, y_limits, show_legend) {
   regime_data <- df %>% filter(Regimes == regime)
   

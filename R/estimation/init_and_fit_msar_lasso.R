@@ -15,17 +15,17 @@
 #'
 #' @return List with two components:
 #'   \describe{
-#'     \item{fit}{Fitted MSAR model object (from \code{fit.MSAR_revised_2}), or NULL if all attempts failed}
+#'     \item{fit}{Fitted MSAR model object (from \code{fit_msar}), or NULL if all attempts failed}
 #'     \item{error}{Error message if fitting failed, or NULL if successful}
 #'   }
 #'
 #' @details
 #' The function implements a robust fitting procedure:
 #'
-#' 1. **Initialization**: Calls \code{init.theta.MSAR_revised_2} to generate
+#' 1. **Initialization**: Calls \code{init_theta_msar} to generate
 #'    initial parameter estimates using hierarchical clustering (HH method)
 #'
-#' 2. **Fitting**: Calls \code{fit.MSAR_revised_2} with LASSO penalty to fit
+#' 2. **Fitting**: Calls \code{fit_msar} with LASSO penalty to fit
 #'    the MSAR model via EM algorithm
 #'
 #' 3. **Error Handling**: Wraps fitting in \code{tryCatch} to catch:
@@ -57,8 +57,8 @@
 #' }
 #'
 #' @seealso
-#' \code{\link{init.theta.MSAR_revised_2}} for parameter initialization
-#' \code{\link{fit.MSAR_revised_2}} for EM algorithm fitting
+#' \code{\link{init_theta_msar}} for parameter initialization
+#' \code{\link{fit_msar}} for EM algorithm fitting
 #' \code{\link{estimate_MSAR}} which calls this function
 #'
 #' @examples
@@ -68,7 +68,7 @@
 #' data_array <- array(ts_data, dim = c(1000, 1, 4))
 #'
 #' # Fit 2-regime MSAR model with retry
-#' result <- init_and_fit.MSAR_Lasso_2(
+#' result <- init_and_fit_msar_lasso(
 #'   data = data_array,
 #'   M = 2,
 #'   order = 1,
@@ -85,7 +85,7 @@
 #' }
 #'
 #' @export
-init_and_fit.MSAR_Lasso_2 <-
+init_and_fit_msar_lasso <-
   function(data,
            M,
            order,
@@ -105,7 +105,7 @@ init_and_fit.MSAR_Lasso_2 <-
       
       # Initialize model for NHMSAR
       model_init <-
-        init.theta.MSAR_revised_2(
+        init_theta_msar(
           data = data,
           M = M,
           order = order,
@@ -119,7 +119,7 @@ init_and_fit.MSAR_Lasso_2 <-
         
         # Fit MSAR model with NHMSAR
         model_fit <-
-          fit.MSAR_revised_2(
+          fit_msar(
             data = data,
             theta = model_init,
             penalty = "LASSO",
@@ -131,11 +131,11 @@ init_and_fit.MSAR_Lasso_2 <-
         list(fit = model_fit, error = NULL)
         
       }, error = function(e) {
-        message("fit.MSAR_revised_2: can't fit: \n\tError: ", e$message)
+        message("fit_msar: can't fit: \n\tError: ", e$message)
         list(fit = NULL, error = e$message)
         # brower()
       }, warning = function(w) {
-        message("fit.MSAR_revised_2: can't fit: \n\tWarning: ", w$message)
+        message("fit_msar: can't fit: \n\tWarning: ", w$message)
         list(fit = NULL, error = w$message)
         # brower()
       })

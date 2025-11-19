@@ -34,7 +34,7 @@
 #' Dependencies loaded centrally via R/dependencies.R (prettyGraphs, lars required)
 #'
 #' @seealso
-#' \code{\link{fit.MSAR_revised_2}} which calls this function
+#' \code{\link{fit_msar}} which calls this function
 #' \code{\link{Mstep.hh.reduct.MSAR_patched_2}} for reduced M-step
 #'
 #' @keywords internal
@@ -42,7 +42,7 @@
 # Dependencies are loaded centrally via R/dependencies.R
 # Required packages: prettyGraphs, lars
 
-Mstep.hh.lasso.MSAR_patched_2 <-
+mstep_hh_lasso_msar <-
 function(data,theta,FB,verbose = FALSE)  {  
   T=dim(data)[1]
   N.samples = dim(as.array(data))[2] 
