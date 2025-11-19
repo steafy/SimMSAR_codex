@@ -166,23 +166,37 @@ dunn_results <- list()
 for (i in 1:4) {
   var <- colnames(aggr_factors)[i]
   val <- unique(aggr_factors[[var]])
-  kw <- kruskal.test(aggr_factors$N, aggr_factors[[var]])
-  dunn <- dunn.test(aggr_factors$N, aggr_factors[[var]], method = "bonferroni")
-  dunn_matrix <- data.frame(
-    comp = dunn$comparisons,
-    Z_val = dunn$Z,
-    p_val = dunn$P,
-    p.adj = round(dunn$P.adjusted, 4)
-    )
-  dunn_matrix <- dunn_matrix[order(dunn_matrix$p.adj), ]
-  dunn_results[[var]] <- list(
-    Kruskal = kw,
-    Dunn = dunn_matrix
-   )
+
+  # Calculate means for each level
   for (j in seq_along(val)) {
     x <- val[j]
     subset <- aggr_factors %>% filter(.data[[var]] == x)
     n_means[[paste(x, var)]] <- mean(subset$N)
+  }
+
+  # Only perform statistical tests if there are multiple groups to compare
+  if (length(val) > 1) {
+    kw <- kruskal.test(aggr_factors$N, aggr_factors[[var]])
+    dunn <- dunn.test(aggr_factors$N, aggr_factors[[var]], method = "bonferroni")
+    dunn_matrix <- data.frame(
+      comp = dunn$comparisons,
+      Z_val = dunn$Z,
+      p_val = dunn$P,
+      p.adj = round(dunn$P.adjusted, 4)
+    )
+    dunn_matrix <- dunn_matrix[order(dunn_matrix$p.adj), ]
+    dunn_results[[var]] <- list(
+      Kruskal = kw,
+      Dunn = dunn_matrix
+    )
+  } else {
+    # Only one group - tests not applicable
+    message(sprintf("Skipping Kruskal-Wallis and Dunn tests for '%s' - only one group (%s)",
+                    var, val))
+    dunn_results[[var]] <- list(
+      Kruskal = "Not applicable - only one group",
+      Dunn = "Not applicable - only one group"
+    )
   }
 }
 
@@ -231,6 +245,18 @@ independent_vars <- colnames(corr_results)[2:5]
 
 permanova_results <- list()
 
+# Check if there are multiple levels in each factor
+factor_levels <- sapply(independent_vars, function(var) {
+  length(unique(corr_results[[var]]))
+})
+
+if (any(factor_levels == 1)) {
+  single_level_vars <- names(factor_levels)[factor_levels == 1]
+  message(sprintf("Warning: The following variables have only one level: %s",
+                  paste(single_level_vars, collapse = ", ")))
+  message("PERMANOVA results may be limited. Consider running with multiple factor levels.")
+}
+
 # Loop over dependent variables
 for (dep_var in dependent_vars) {
   # Create formula for ANOVA
@@ -238,9 +264,20 @@ for (dep_var in dependent_vars) {
                               paste(combn(independent_vars, 2, FUN = paste, collapse = ":"), collapse = " + "), "+",
                               paste(combn(independent_vars, 3, FUN = paste, collapse = ":"), collapse = " + "), "+",
                               paste(independent_vars, collapse = ":"), collapse = " "))
-  
+
   # Calculate permutations ANOVA
-  model <- aovp(formula, data = corr_results, perm = "Prob", maxIter = 5000)
+  model <- tryCatch({
+    aovp(formula, data = corr_results, perm = "Prob", maxIter = 5000)
+  }, error = function(e) {
+    message(sprintf("Error in PERMANOVA for %s: %s", dep_var, e$message))
+    return(NULL)
+  })
+
+  # Skip if model failed
+  if (is.null(model)) {
+    permanova_results[[dep_var]] <- "Model failed - see error message above"
+    next
+  }
 
   # Extract summary
   summary_model <- summary(model)
@@ -278,54 +315,93 @@ for (dep_var in names(permanova_results)) {
 
 ###################################
 ### Calculate a linear mixed model
-# Scale factors
-corr_results <- corr_results %>%
-  mutate(
-    Timesteps_scaled = scale(as.numeric(as.character(Timesteps))),
-    Density_scaled   = scale(as.numeric(as.character(Density))),
-    Nodes_scaled     = scale(as.numeric(as.character(Nodes))),
-    Regimes_scaled   = scale(as.numeric(as.character(Regimes)))
-  )
 
+# Check for factors with only one level (will cause issues with scaling and modeling)
+lmm_factor_levels <- sapply(c("Timesteps", "Density", "Nodes", "Regimes"), function(var) {
+  length(unique(corr_results[[var]]))
+})
 
-cols <- colnames(corr_results)[8:11]
+if (any(lmm_factor_levels == 1)) {
+  single_level_vars <- names(lmm_factor_levels)[lmm_factor_levels == 1]
+  message(sprintf("Warning: Cannot fit linear mixed models - the following variables have only one level: %s",
+                  paste(single_level_vars, collapse = ", ")))
+  message("Skipping linear mixed model analysis. Run with multiple factor levels to enable this analysis.")
+  linear_mixed_models <- list()
+} else {
+  # Scale factors
+  corr_results <- corr_results %>%
+    mutate(
+      Timesteps_scaled = scale(as.numeric(as.character(Timesteps))),
+      Density_scaled   = scale(as.numeric(as.character(Density))),
+      Nodes_scaled     = scale(as.numeric(as.character(Nodes))),
+      Regimes_scaled   = scale(as.numeric(as.character(Regimes)))
+    )
 
-linear_mixed_models <- list()
+  cols <- colnames(corr_results)[8:11]
 
-for (col_name in cols) {
+  linear_mixed_models <- list()
 
-# Specify model
-fmla <- as.formula(paste0(col_name, " ~ Timesteps_scaled * Density_scaled * Nodes_scaled * Regimes_scaled +
-                          RegimeIndex +
-                          (1 | Condition/SimID)")
-                   )
-model <- lmer(fmla, data = corr_results)
+  for (col_name in cols) {
 
-# Summarize model
-lmm <- as.data.frame(coef(summary(model))) %>%
-  dplyr::mutate(Signif = ifelse(`Pr(>|t|)` < 0.001, "***",
-                                ifelse(`Pr(>|t|)` < 0.01, "**",
-                                       ifelse(`Pr(>|t|)` < 0.05, "*", ""))))
+    # Specify model
+    fmla <- as.formula(paste0(col_name, " ~ Timesteps_scaled * Density_scaled * Nodes_scaled * Regimes_scaled +
+                            RegimeIndex +
+                            (1 | Condition/SimID)")
+                     )
 
-rownames(lmm) <- gsub(":", " × ", gsub("_scaled", "", rownames(lmm)))
+    model <- tryCatch({
+      lmer(fmla, data = corr_results)
+    }, error = function(e) {
+      message(sprintf("Error fitting LMM for %s: %s", col_name, e$message))
+      return(NULL)
+    })
 
-linear_mixed_models[[col_name]] <- lmm
+    if (is.null(model)) {
+      linear_mixed_models[[col_name]] <- "Model failed - see error message above"
+      next
+    }
+
+    # Summarize model
+    lmm <- as.data.frame(coef(summary(model))) %>%
+      dplyr::mutate(Signif = ifelse(`Pr(>|t|)` < 0.001, "***",
+                                    ifelse(`Pr(>|t|)` < 0.01, "**",
+                                           ifelse(`Pr(>|t|)` < 0.05, "*", ""))))
+
+    rownames(lmm) <- gsub(":", " × ", gsub("_scaled", "", rownames(lmm)))
+
+    linear_mixed_models[[col_name]] <- lmm
+  }
 }
-
 
 # Export results for each model in the list
-for (name in names(linear_mixed_models)) {
-  tab <- linear_mixed_models[[name]]
-  kable(tab, caption = paste("Ergebnisse für", name), format = "html") %>%
-    kable_styling(bootstrap_options = c("striped", "hover")) %>%
-    save_kable(file = paste0("Ergebnisse_", name, ".html"))
-}
+# Only export if we have valid model results (data frames, not error messages)
+if (length(linear_mixed_models) > 0) {
+  for (name in names(linear_mixed_models)) {
+    tab <- linear_mixed_models[[name]]
 
+    # Skip if this is an error message rather than a model
+    if (is.character(tab)) {
+      message(sprintf("Skipping export for %s: %s", name, tab))
+      next
+    }
 
-for (name in names(linear_mixed_models)) {
-  tab <- linear_mixed_models[[name]]
-  print(xtable(tab, caption = paste("Ergebnisse für", name)),
-        file = paste0("Ergebnisse_", name, ".tex"))
+    # Export to HTML
+    tryCatch({
+      kable(tab, caption = paste("Ergebnisse für", name), format = "html") %>%
+        kable_styling(bootstrap_options = c("striped", "hover")) %>%
+        save_kable(file = paste0("Ergebnisse_", name, ".html"))
+    }, error = function(e) {
+      message(sprintf("Error exporting HTML for %s: %s", name, e$message))
+    })
+
+    # Export to LaTeX
+    tryCatch({
+      print(xtable(tab, caption = paste("Ergebnisse für", name)),
+            file = paste0("Ergebnisse_", name, ".tex"))
+    }, error = function(e) {
+      message(sprintf("Error exporting LaTeX for %s: %s", name, e$message))
+    })
+  }
 }
 
 #######################################
