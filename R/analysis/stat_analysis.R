@@ -228,23 +228,110 @@ desc <- as.data.frame(matrix(nrow = 5, ncol = 10,
                              )
                       )
 
-
 for (i in 1:10) {
-  means <- c()
-  for (j in 6:8) {
-    x <- mean(descript_stats[[i]][[j]])
-    means <- c(means, x)
-    val <- c(means,
-             min(descript_stats[[i]][["Min"]]),
-             max(descript_stats[[i]][["Max"]])
-             )
-  }
+  x <- descript_stats[[i]]
+  val <- c(mean(x[["Mean"]]),
+           sd(x[["Mean"]]),
+           mean(x[["Median"]]),
+           min(x[["Min"]]),
+           max(x[["Max"]])
+           )
   desc[ ,i] <- val
 }
 
-
 ###################################
-### Calculate a linear mixed model
+# ### Calculate a linear mixed model
+# 
+# # Check for factors with only one level (will cause issues with scaling and modeling)
+# lmm_factor_levels <- sapply(c("Timesteps", "Density", "Nodes", "Regimes"), function(var) {
+#   length(unique(corr_results[[var]]))
+# })
+# 
+# if (any(lmm_factor_levels == 1)) {
+#   single_level_vars <- names(lmm_factor_levels)[lmm_factor_levels == 1]
+#   message(sprintf("Warning: Cannot fit linear mixed models - the following variables have only one level: %s",
+#                   paste(single_level_vars, collapse = ", ")))
+#   message("Skipping linear mixed model analysis. Run with multiple factor levels to enable this analysis.")
+#   linear_mixed_models <- list()
+# } else {
+#   # Scale factors
+#   corr_results <- corr_results %>%
+#     mutate(
+#       Timesteps_scaled = scale(as.numeric(as.character(Timesteps))),
+#       Density_scaled   = scale(as.numeric(as.character(Density))),
+#       Nodes_scaled     = scale(as.numeric(as.character(Nodes))),
+#       Regimes_scaled   = scale(as.numeric(as.character(Regimes)))
+#     )
+#   # Set variables to model
+#   cols <- c("Wtemp_corr", "Wtemp_ac_corr", "Wcont_corr", "Wcont_ac_corr")
+# 
+#   linear_mixed_models <- list()
+# 
+#   for (col_name in cols) {
+# 
+#     # Specify model
+#     fmla <- as.formula(paste0(col_name, " ~ Timesteps_scaled * Density_scaled * Nodes_scaled * Regimes_scaled +
+#                             RegimeIndex +
+#                             (1 | Condition/SimID)")
+#                      )
+# 
+#     model <- tryCatch({
+#       lmer(fmla, data = corr_results)
+#     }, error = function(e) {
+#       message(sprintf("Error fitting LMM for %s: %s", col_name, e$message))
+#       return(NULL)
+#     })
+# 
+#     if (is.null(model)) {
+#       linear_mixed_models[[col_name]] <- "Model failed - see error message above"
+#       next
+#     }
+# 
+#     # Summarize model
+#     lmm <- as.data.frame(coef(summary(model))) %>%
+#       dplyr::mutate(Signif = ifelse(`Pr(>|t|)` < 0.001, "***",
+#                                     ifelse(`Pr(>|t|)` < 0.01, "**",
+#                                            ifelse(`Pr(>|t|)` < 0.05, "*", ""))))
+# 
+#     rownames(lmm) <- gsub(":", " × ", gsub("_scaled", "", rownames(lmm)))
+# 
+#     linear_mixed_models[[col_name]] <- lmm
+#   }
+# }
+# 
+# # Export results for each model in the list
+# # Only export if we have valid model results (data frames, not error messages)
+# if (length(linear_mixed_models) > 0) {
+#   for (name in names(linear_mixed_models)) {
+#     tab <- linear_mixed_models[[name]]
+# 
+#     # Skip if this is an error message rather than a model
+#     if (is.character(tab)) {
+#       message(sprintf("Skipping export for %s: %s", name, tab))
+#       next
+#     }
+# 
+#     # Export to HTML
+#     tryCatch({
+#       kable(tab, caption = paste("Ergebnisse für", name), format = "html") %>%
+#         kable_styling(bootstrap_options = c("striped", "hover")) %>%
+#         save_kable(file = paste0("Ergebnisse_", name, ".html"))
+#     }, error = function(e) {
+#       message(sprintf("Error exporting HTML for %s: %s", name, e$message))
+#     })
+# 
+#     # Export to LaTeX
+#     tryCatch({
+#       print(xtable(tab, caption = paste("Ergebnisse für", name), digits = 3),
+#             file = paste0("Ergebnisse_", name, ".tex"))
+#     }, error = function(e) {
+#       message(sprintf("Error exporting LaTeX for %s: %s", name, e$message))
+#     })
+#   }
+# }
+
+
+## Calculate a linear mixed model  (reworked: unique SimUID, RegimeIndex as factor, safer optimizer)
 
 # Check for factors with only one level (will cause issues with scaling and modeling)
 lmm_factor_levels <- sapply(c("Timesteps", "Density", "Nodes", "Regimes"), function(var) {
@@ -253,52 +340,79 @@ lmm_factor_levels <- sapply(c("Timesteps", "Density", "Nodes", "Regimes"), funct
 
 if (any(lmm_factor_levels == 1)) {
   single_level_vars <- names(lmm_factor_levels)[lmm_factor_levels == 1]
-  message(sprintf("Warning: Cannot fit linear mixed models - the following variables have only one level: %s",
-                  paste(single_level_vars, collapse = ", ")))
+  message(sprintf(
+    "Warning: Cannot fit linear mixed models - the following variables have only one level: %s",
+    paste(single_level_vars, collapse = ", ")
+  ))
   message("Skipping linear mixed model analysis. Run with multiple factor levels to enable this analysis.")
   linear_mixed_models <- list()
+  
 } else {
-  # Scale factors
+  
+  # Prepare grouping + predictors
   corr_results <- corr_results %>%
     mutate(
-      Timesteps_scaled = scale(as.numeric(as.character(Timesteps))),
-      Density_scaled   = scale(as.numeric(as.character(Density))),
-      Nodes_scaled     = scale(as.numeric(as.character(Nodes))),
-      Regimes_scaled   = scale(as.numeric(as.character(Regimes)))
+      # RegimeIndex should not be treated as numeric trend
+      RegimeIndex = factor(RegimeIndex),
+      
+      # Make a globally unique simulation identifier (ts_id restarts at 1 per condition)
+      SimUID = interaction(Condition, SimID, drop = TRUE),
+      
+      # Scale numeric versions of the factors (treat as quantitative levels)
+      Timesteps_scaled = as.numeric(scale(as.numeric(as.character(Timesteps)))),
+      Density_scaled   = as.numeric(scale(as.numeric(as.character(Density)))),
+      Nodes_scaled     = as.numeric(scale(as.numeric(as.character(Nodes)))),
+      Regimes_scaled   = as.numeric(scale(as.numeric(as.character(Regimes))))
     )
-
+  
+  # Set variables to model
   cols <- c("Wtemp_corr", "Wtemp_ac_corr", "Wcont_corr", "Wcont_ac_corr")
-
+  
   linear_mixed_models <- list()
-
+  
   for (col_name in cols) {
-
-    # Specify model
-    fmla <- as.formula(paste0(col_name, " ~ Timesteps_scaled * Density_scaled * Nodes_scaled * Regimes_scaled +
-                            RegimeIndex +
-                            (1 | Condition/SimID)")
-                     )
-
+    
+    # Specify model (drop Condition random intercept to avoid singular fits)
+    fmla <- as.formula(paste0(
+      col_name,
+      " ~ Timesteps_scaled * Density_scaled * Nodes_scaled * Regimes_scaled + ",
+      "RegimeIndex + ",
+      "(1 | SimUID)"
+    ))
+    
     model <- tryCatch({
-      lmer(fmla, data = corr_results)
+      lmer(
+        fmla,
+        data = corr_results,
+        control = lmerControl(
+          optimizer = "bobyqa",
+          optCtrl = list(maxfun = 2e5)
+        )
+      )
     }, error = function(e) {
       message(sprintf("Error fitting LMM for %s: %s", col_name, e$message))
       return(NULL)
+    }, warning = function(w) {
+      # Keep the warning visible but continue (you can change this behavior if you want)
+      message(sprintf("Warning fitting LMM for %s: %s", col_name, w$message))
+      invokeRestart("muffleWarning")
     })
-
+    
     if (is.null(model)) {
       linear_mixed_models[[col_name]] <- "Model failed - see error message above"
       next
     }
-
+    
     # Summarize model
     lmm <- as.data.frame(coef(summary(model))) %>%
-      dplyr::mutate(Signif = ifelse(`Pr(>|t|)` < 0.001, "***",
-                                    ifelse(`Pr(>|t|)` < 0.01, "**",
-                                           ifelse(`Pr(>|t|)` < 0.05, "*", ""))))
-
+      dplyr::mutate(
+        Signif = ifelse(`Pr(>|t|)` < 0.001, "***",
+                        ifelse(`Pr(>|t|)` < 0.01, "**",
+                               ifelse(`Pr(>|t|)` < 0.05, "*", "")))
+      )
+    
     rownames(lmm) <- gsub(":", " × ", gsub("_scaled", "", rownames(lmm)))
-
+    
     linear_mixed_models[[col_name]] <- lmm
   }
 }
@@ -308,13 +422,13 @@ if (any(lmm_factor_levels == 1)) {
 if (length(linear_mixed_models) > 0) {
   for (name in names(linear_mixed_models)) {
     tab <- linear_mixed_models[[name]]
-
+    
     # Skip if this is an error message rather than a model
     if (is.character(tab)) {
       message(sprintf("Skipping export for %s: %s", name, tab))
       next
     }
-
+    
     # Export to HTML
     tryCatch({
       kable(tab, caption = paste("Ergebnisse für", name), format = "html") %>%
@@ -323,16 +437,19 @@ if (length(linear_mixed_models) > 0) {
     }, error = function(e) {
       message(sprintf("Error exporting HTML for %s: %s", name, e$message))
     })
-
-    # Export to LaTeX
+    
+    # Export to LaTeX (digits=3)
     tryCatch({
-      print(xtable(tab, caption = paste("Ergebnisse für", name)),
-            file = paste0("Ergebnisse_", name, ".tex"))
+      print(
+        xtable(tab, caption = paste("Ergebnisse für", name), digits = 3),
+        file = paste0("Ergebnisse_", name, ".tex")
+      )
     }, error = function(e) {
       message(sprintf("Error exporting LaTeX for %s: %s", name, e$message))
     })
   }
 }
+
 
 #######################################
 ### Make lineplot panels for each variable
@@ -443,4 +560,60 @@ for (col_name in cols) {
   message("Gespeichert: ", output_file)
 }
 
+
+
+
+
+
+#######################################
+library(lme4)
+# optional: library(performance)  # für r2_nakagawa
+
+outcomes <- c("Wtemp_corr", "Wtemp_ac_corr", "Wcont_corr", "Wcont_ac_corr")
+
+# Falls noch nicht vorhanden:
+corr_results <- corr_results %>%
+  mutate(
+    SimUID = interaction(Condition, SimID, drop = TRUE),
+    RegimeIndex = factor(RegimeIndex)
+  )
+
+fits <- list()
+
+for (y in outcomes) {
+  
+  f_with <- as.formula(paste0(
+    y, " ~ Timesteps_scaled * Density_scaled * Nodes_scaled * Regimes_scaled + ",
+    "RegimeIndex + (1 | SimUID)"
+  ))
+  
+  f_without <- as.formula(paste0(
+    y, " ~ Timesteps_scaled * Density_scaled * Nodes_scaled * Regimes_scaled + ",
+    "(1 | SimUID)"
+  ))
+  
+  m_with <- lmer(f_with, data = corr_results,
+                 REML = FALSE,
+                 control = lmerControl(optimizer="bobyqa", optCtrl=list(maxfun=2e5)))
+  
+  m_without <- lmer(f_without, data = corr_results,
+                    REML = FALSE,
+                    control = lmerControl(optimizer="bobyqa", optCtrl=list(maxfun=2e5)))
+  
+  comp <- anova(m_without, m_with)   # Likelihood-Ratio-Test
+  aic  <- AIC(m_without, m_with)
+  bic  <- BIC(m_without, m_with)
+  
+  # optional:
+  # r2 <- performance::r2_nakagawa(m_with); r2_wo <- performance::r2_nakagawa(m_without)
+  
+  fits[[y]] <- list(
+    LRT = comp,
+    AIC = aic,
+    BIC = bic
+    #, R2_with = r2, R2_without = r2_wo
+  )
+}
+
+fits
 
