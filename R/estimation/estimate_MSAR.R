@@ -13,8 +13,15 @@
 #' @param MaxIter Integer. Maximum EM algorithm iterations.
 #' @param verbose Logical. If TRUE, prints detailed progress messages.
 #' @param min_edg_val Numeric. Minimum edge threshold - values below are set to zero.
+#'   Only used when use_bootstrap = FALSE.
 #' @param Timeseries_data Tibble. Output from \code{generate_timeseries} containing
 #'   simulated data and true dynamics in tibble format with list-columns.
+#' @param use_bootstrap Logical. If TRUE, use bootstrap stability selection instead
+#'   of simple thresholding. Default: FALSE. Note: This is computationally expensive.
+#' @param n_bootstrap Integer. Number of bootstrap samples when use_bootstrap = TRUE.
+#'   Default: 50. Higher values give more stable selection but take longer.
+#' @param bootstrap_threshold Numeric. Selection threshold (0-1) for bootstrap.
+#'   Edges selected in > threshold proportion of bootstraps are kept. Default: 0.6.
 #'
 #' @return A tibble (msar_results object) with the following columns:
 #'   \describe{
@@ -62,7 +69,7 @@
 #'    }
 #'
 #' 4. **Regime Assignment**: For multi-regime models, matches estimated to true
-#'    regimes based on maximum Wtemp correlations using \code{asign_regimes}
+#'    regimes based on maximum Wtemp correlations using \code{assign_regimes}
 #'
 #' 5. **Comparison Metrics**: Computes for each regime pair:
 #'    \itemize{
@@ -83,7 +90,7 @@
 #' @seealso
 #' \code{\link{generate_timeseries}} for generating input data
 #' \code{\link{init_and_fit_msar_lasso}} for model fitting
-#' \code{\link{asign_regimes}} for regime matching
+#' \code{\link{assign_regimes}} for regime matching
 #' \code{\link{senspec}} for sensitivity/specificity
 #' \code{\link{calculate_MAE}} for mean absolute error
 #' \code{\link{get_stats}} for computing summary statistics
@@ -124,14 +131,18 @@ source("R/estimation/init_theta_msar.R")
 source("R/estimation/init_and_fit_msar_lasso.R")
 
 # Load functions to assign and compare regime dynamics
-source("R/utils/asign_regimes.R")
+source("R/utils/assign_regimes.R")
 source("R/utils/senspec.R")
 source("R/utils/summarize_cor.R")
 source("R/utils/calculate_MAE.R")
 
+# Load bootstrap stability selection
+source("R/estimation/bootstrap_stability.R")
 
 
-estimate_MSAR <- function(Density, N, M, T, n_ts, order, MaxIter, verbose, min_edg_val, Timeseries_data) {
+
+estimate_MSAR <- function(Density, N, M, T, n_ts, order, MaxIter, verbose, min_edg_val, Timeseries_data,
+                          use_bootstrap = FALSE, n_bootstrap = 50, bootstrap_threshold = 0.6) {
 
 # Setup progressbar
 print("Estimating MSAR models from timeseries", quote = FALSE)
@@ -186,10 +197,6 @@ for (t in seq_along(T)) {
       for (k in seq_along(M)) {
         for (l in 1:n_ts) {
 
-          ### Jan
-          # reset !!!
-          #set.seed(seed)
-
           loc <-
             paste("i=", i, ", j=", j, ", k=", k, ", l=", l, sep = "")
 
@@ -201,8 +208,7 @@ for (t in seq_along(T)) {
             print(paste("fit parms:", app_parms), quote = FALSE)
             print("", quote = FALSE)
           }
-          ### Jan end
-
+  
           # Get complete data for current timeseries from tibble
           current_row <- Timeseries_data %>%
             filter(timesteps == T[t], density == Density[i],
@@ -224,8 +230,7 @@ for (t in seq_along(T)) {
 
           # Normalize timeseries data
           current_ts_norm <- huge.npn(current_ts, verbose = verbose)
-          #current_ts_norm <- current_ts
-
+   
           # Make array from timeseries data
           timesteps <- T[t]                   # Set no. of timesteps
           d <- ncol(current_ts_norm)          # Set no. of nodes
@@ -254,7 +259,7 @@ for (t in seq_along(T)) {
             next
           }
 
-          Sys.sleep(1)
+         # Sys.sleep(1)
 
           # Extract estimated Betas for all regimes from MSAR model
           est_Betas <- model_fit[["theta"]][["A"]]
@@ -302,15 +307,66 @@ for (t in seq_along(T)) {
             }
           }
 
-          # Set coefficients in estimated Wtemp and Wcont below threshold to 0
-          for(m in 1:M[k]) {
-            for(n in 1:N[j]) {
-              for(o in 1:N[j]) {
-                if(abs(est_Wtemps[[m]][n, o]) < min_edg_val){
-                  est_Wtemps[[m]][n, o] <- 0
+          # Remove spurious edges using bootstrap stability selection or simple threshold
+          if (use_bootstrap) {
+            # Bootstrap stability selection
+            if (verbose) {
+              message("Running bootstrap stability selection...")
+            }
+
+            stability_result <- bootstrap_stability_selection(
+              data_norm = current_ts_norm,
+              M = M[k],
+              order = order,
+              MaxIter = MaxIter,
+              n_bootstrap = n_bootstrap,
+              block_size = min(20, floor(T[t] / 10)),
+              threshold = bootstrap_threshold,
+              verbose = verbose
+            )
+
+            if (!is.null(stability_result)) {
+              # Apply bootstrap selection
+              filtered <- apply_bootstrap_selection(est_Wtemps, est_Wconts, stability_result)
+              est_Wtemps <- filtered$est_Wtemps
+              est_Wconts <- filtered$est_Wconts
+
+              if (verbose) {
+                for (m in 1:M[k]) {
+                  n_wtemp <- sum(stability_result$Wtemp_selected[[m]])
+                  n_wcont <- sum(stability_result$Wcont_selected[[m]])
+                  message("  Regime ", m, ": ", n_wtemp, " Wtemp edges, ", n_wcont, " Wcont edges selected")
                 }
-                if(abs(est_Wconts[[m]][n, o]) < min_edg_val){
-                  est_Wconts[[m]][n, o] <- 0
+              }
+            } else {
+              # Bootstrap failed, fall back to simple threshold
+              if (verbose) {
+                message("Bootstrap failed, using simple threshold")
+              }
+              for(m in 1:M[k]) {
+                for(n in 1:N[j]) {
+                  for(o in 1:N[j]) {
+                    if(abs(est_Wtemps[[m]][n, o]) < min_edg_val){
+                      est_Wtemps[[m]][n, o] <- 0
+                    }
+                    if(abs(est_Wconts[[m]][n, o]) < min_edg_val){
+                      est_Wconts[[m]][n, o] <- 0
+                    }
+                  }
+                }
+              }
+            }
+          } else {
+            # Simple threshold (original approach)
+            for(m in 1:M[k]) {
+              for(n in 1:N[j]) {
+                for(o in 1:N[j]) {
+                  if(abs(est_Wtemps[[m]][n, o]) < min_edg_val){
+                    est_Wtemps[[m]][n, o] <- 0
+                  }
+                  if(abs(est_Wconts[[m]][n, o]) < min_edg_val){
+                    est_Wconts[[m]][n, o] <- 0
+                  }
                 }
               }
             }
@@ -359,7 +415,7 @@ for (t in seq_along(T)) {
 
           # Assign original and estimated regimes based on highest correlations of Wtemp
           if (M[k] > 1) {
-            assigned_regimes <- asign_regimes(cor_results)
+            assigned_regimes <- assign_regimes(cor_results)
 
             # Process each regime pair
             for (m in 1:nrow(assigned_regimes)) {
@@ -607,3 +663,4 @@ print.msar_results <- function(x, ...) {
   cat("Use dplyr::filter() to subset by conditions.\n")
   NextMethod()
 }
+
