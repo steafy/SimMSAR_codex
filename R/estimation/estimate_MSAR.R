@@ -135,6 +135,7 @@ source("R/utils/assign_regimes.R")
 source("R/utils/senspec.R")
 source("R/utils/summarize_cor.R")
 source("R/utils/calculate_MAE.R")
+source("R/utils/undirected_metrics.R")
 
 # Load bootstrap stability selection
 source("R/estimation/bootstrap_stability.R")
@@ -205,7 +206,6 @@ for (t in seq_along(T)) {
             print("", quote = FALSE)
             print("", quote = FALSE)
             print(paste("Timeseries:", loc), quote = FALSE)
-            print(paste("fit parms:", app_parms), quote = FALSE)
             print("", quote = FALSE)
           }
   
@@ -269,8 +269,23 @@ for (t in seq_along(T)) {
 
           # Make kappa from estimated sigma for all regimes
           est_kappas <- list()
+          kappa_failed <- FALSE
           for(m in 1:M[k]) {
-            est_kappas[[paste0("Regime", m)]] <- solve(est_sigmas[[m]])
+            est_kappa <- tryCatch(
+              solve(est_sigmas[[m]]),
+              error = function(e) NULL
+            )
+            if (is.null(est_kappa)) {
+              kappa_failed <- TRUE
+              break
+            }
+            est_kappas[[paste0("Regime", m)]] <- est_kappa
+          }
+          if (kappa_failed) {
+            message("ignore fit! ", "\n\tTimeseries_data: ", loc,
+                    "\n\terror: singular covariance matrix in at least one regime")
+            pb$tick()
+            next
           }
 
 
@@ -283,8 +298,9 @@ for (t in seq_along(T)) {
               for(o in 1:N[j]) {
                 if(n != o) {
                   est_Wcont[n, o] <- -est_kappa[n, o] / sqrt(est_kappa[n, n] * est_kappa[o, o])
-                  est_Wconts[[paste0("Regime", m)]] <- est_Wcont
-                }
+            # Wcont is undirected; symmetrize to reduce numeric asymmetry
+            est_Wconts[[paste0("Regime", m)]] <- symmetrize_matrix(est_Wcont)
+          }
               }
             }
           }
@@ -432,9 +448,13 @@ for (t in seq_along(T)) {
 
               orig_Wcont <- current_regimes[[assigned_regimes[[m, 1]]]][["Wcont"]]
               est_Wcont <- est_Wconts[[assigned_regimes[[m, 2]]]]
-              Wcont_senspec <- senspec(orig_Wcont, est_Wcont)
-              cor_Wcont <- cor(as.vector(orig_Wcont), as.vector(est_Wcont), method = "pearson")
-              MAE_Wcont <- calculate_MAE(orig_Wcont, est_Wcont)
+              Wcont_senspec <- senspec_upper_tri(orig_Wcont, est_Wcont, diag = FALSE)
+              cor_Wcont <- cor(
+                vectorize_upper_tri(orig_Wcont, diag = FALSE),
+                vectorize_upper_tri(est_Wcont, diag = FALSE),
+                method = "pearson"
+              )
+              MAE_Wcont <- mae_upper_tri(orig_Wcont, est_Wcont, diag = FALSE)
 
               est_Wcont_ac <- ave_control_centrality(est_Wcont)
               orig_Wcont_ac <- current_regimes[[assigned_regimes[[m, 1]]]][["Wcont_ac"]]
@@ -484,13 +504,17 @@ for (t in seq_along(T)) {
 
             orig_Wcont <- current_regimes[["Regime1"]][["Wcont"]]
             est_Wcont <- est_Wconts[["Regime1"]]
-            cor_Wcont <- cor(as.vector(orig_Wcont), as.vector(est_Wcont), method = "pearson")
-            Wcont_senspec <- senspec(orig_Wcont, est_Wcont)
+            cor_Wcont <- cor(
+              vectorize_upper_tri(orig_Wcont, diag = FALSE),
+              vectorize_upper_tri(est_Wcont, diag = FALSE),
+              method = "pearson"
+            )
+            Wcont_senspec <- senspec_upper_tri(orig_Wcont, est_Wcont, diag = FALSE)
 
             est_Wcont_ac <- ave_control_centrality(est_Wcont)
             orig_Wcont_ac <- current_regimes[["Regime1"]][["Wcont_ac"]]
             cor_Wcont_ac <- cor(orig_Wcont_ac, est_Wcont_ac, method = "pearson")
-            MAE_Wcont <- calculate_MAE(orig_Wcont, est_Wcont)
+            MAE_Wcont <- mae_upper_tri(orig_Wcont, est_Wcont, diag = FALSE)
 
             # Store in tibble
             msar_results$timesteps[row_idx] <- T[t]
