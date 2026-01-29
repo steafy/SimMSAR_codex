@@ -48,7 +48,9 @@ PACKAGES <- list(
   # LASSO and regularization
   regularization = c(
     "lars",         # Least angle regression, lasso and forward stagewise
-    "prettyGraphs"  # Graph visualization (for LASSO)
+    "prettyGraphs", # Graph visualization (for LASSO)
+    "glmnet",       # Lasso and elastic-net regularized GLMs (adaptive LASSO)
+    "glasso"        # Graphical lasso for precision matrix estimation
   ),
 
   # Visualization
@@ -68,7 +70,8 @@ PACKAGES <- list(
 
   # Utilities
   utilities = c(
-    "progress"      # Progress bars for loops
+    "progress",     # Progress bars for loops
+    "clue"          # Cluster ensembles, Hungarian algorithm for assignment
   )
 )
 
