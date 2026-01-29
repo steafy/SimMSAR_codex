@@ -107,7 +107,6 @@ mstep_hh_reduct_msar <-
     transmat = NHMSAR:::mk_stochastic(exp_num_trans)
     
     if (min(postmix) < 1e-6) {   # original was set to 1e-6
-      browser()
       stop(
         "error : smoothing probabilities are to small, in one regime at least. You should revise initialisation."
       )

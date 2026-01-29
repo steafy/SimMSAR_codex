@@ -112,7 +112,8 @@ generate_timeseries <- function(Density,
                                 min_edg_val,
                                 max_edg_val,
                                 remain_lower,
-                                remain_upper
+                                remain_upper,
+                                max_attempts = 1000
                                 ) {
 
   # Setup progressbar for network generation
@@ -148,12 +149,21 @@ generate_timeseries <- function(Density,
           # Generate dynamics for all regimes in this condition
           regime_dynamics <- list()
           for (m in 1:M[l]) {
+            attempts <- 0
             repeat {
+              attempts <- attempts + 1
               W <- generate_netdyn(N[j], Density[i], min_edg_val, max_edg_val)
               if (all(abs(W[["Wtemp"]][W[["Wtemp"]] != 0]) >= min_edg_val) &&
                   all(abs(W[["Wcont"]][W[["Wcont"]] != 0]) >= min_edg_val) &&
                   any(W[["Wcont"]] != 0)) {
                 break
+              }
+              if (attempts >= max_attempts) {
+                stop(
+                  "Failed to generate valid network dynamics after ",
+                  max_attempts,
+                  " attempts. Check Density/min_edg_val/max_edg_val settings."
+                )
               }
             }
             regime_dynamics[[paste0("Regime", m)]] <- W
@@ -241,7 +251,6 @@ generate_timeseries <- function(Density,
 
               # Get dynamics for current regime
               curreg_mu <- dynamics[[reg_index]][["mu"]]
-              curreg_W_temp <- dynamics[[reg_index]][["W_temp"]]
               curreg_Beta <- dynamics[[reg_index]][["Beta"]]
               curreg_sigma <- dynamics[[reg_index]][["sigma"]]
 

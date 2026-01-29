@@ -6,10 +6,10 @@
 #'
 #' @param Matrix Numeric matrix to check for stability.
 #'
-#' @return Character string:
+#' @return Logical:
 #'   \describe{
-#'     \item{"Yes"}{All eigenvalues have |lambda| < 1 (stable)}
-#'     \item{"No"}{At least one eigenvalue has |lambda| >= 1 (unstable)}
+#'     \item{TRUE}{All eigenvalues have |lambda| < 1 (stable)}
+#'     \item{FALSE}{At least one eigenvalue has |lambda| >= 1 (unstable)}
 #'   }
 #'
 #' @details
@@ -45,7 +45,7 @@
 #' @export
 check_stability <- function(Matrix) {
   eigen <- eigen(Matrix)
-  stability <- ifelse(all(abs(eigen$values) < 1), "Yes", "No")
+  stability <- all(abs(eigen$values) < 1)
   
   return(stability)
 }

@@ -44,6 +44,11 @@
 
 mstep_hh_lasso_msar <-
 function(data,theta,FB,verbose = FALSE)  {  
+  if (!exists("repmat", mode = "function")) {
+    repmat <- function(x, m, n) {
+      matrix(rep(x, m * n), nrow = m, ncol = n, byrow = TRUE)
+    }
+  }
   T=dim(data)[1]
   N.samples = dim(as.array(data))[2] 
   d = dim(as.array(data))[3]
