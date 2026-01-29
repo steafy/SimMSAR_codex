@@ -92,7 +92,9 @@ init_and_fit_msar_lasso <-
            MaxIter = 200,
            retry = 4,
            eps = 1e-5,
-           verbose = FALSE) {
+           verbose = FALSE,
+           lambda_fuse_A = 0,
+           lambda_fuse_sigma = 0) {
     result <- list(fit = NULL, error = NULL)
     
     # browser()
@@ -125,7 +127,9 @@ init_and_fit_msar_lasso <-
             penalty = "LASSO",
             MaxIter = MaxIter,
             eps = eps,
-            verbose = verbose
+            verbose = verbose,
+            lambda_fuse_A = lambda_fuse_A,
+            lambda_fuse_sigma = lambda_fuse_sigma
           )
         
         list(fit = model_fit, error = NULL)
