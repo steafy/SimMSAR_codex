@@ -167,7 +167,7 @@ Timeseries_data <- generate_timeseries(
   n_ts = n_ts,
   remain_lower = remain_lower,
   remain_upper = remain_upper
-)
+  )
 
 cat("Data generation complete!\n\n")
 
