@@ -13,12 +13,17 @@
 #   install_missing_packages()
 # =============================================================================
 
-# Define all required packages by category
+# Archived CRAN packages (no longer available via install.packages).
+# Installed from the CRAN archive .tar.gz via devtools::install_url().
+ARCHIVED_PACKAGES <- c(
+  NHMSAR     = "https://cran.r-project.org/src/contrib/Archive/NHMSAR/NHMSAR_1.19.tar.gz",
+  netcontrol = "https://cran.r-project.org/src/contrib/Archive/netcontrol/netcontrol_0.1.tar.gz"
+)
+
+# Define all required packages by category (CRAN-available only)
 PACKAGES <- list(
   # Core MSAR functionality
   core = c(
-    "NHMSAR",      # Non-homogeneous Markov-switching autoregressive models
-    "netcontrol",  # Network control analysis
     "huge"         # High-dimensional undirected graph estimation (nonparanormal)
   ),
 
@@ -32,6 +37,7 @@ PACKAGES <- list(
   stats = c(
     "lme4",        # Linear mixed-effects models
     "lmerTest",    # Tests for mixed models
+    "lmtest",      # Diagnostic tests for linear models
     "lmPerm",      # Permutation tests for linear models
     "dunn.test",   # Dunn's test for multiple comparisons
     "effects",     # Effect displays for linear models
@@ -75,8 +81,8 @@ PACKAGES <- list(
   )
 )
 
-# Flatten the list to get all packages
-ALL_PACKAGES <- unlist(PACKAGES, use.names = FALSE)
+# Flatten the list to get all packages (CRAN + archived)
+ALL_PACKAGES <- c(names(ARCHIVED_PACKAGES), unlist(PACKAGES, use.names = FALSE))
 
 #' Check which packages are installed
 #'
@@ -88,6 +94,10 @@ check_installed_packages <- function() {
 }
 
 #' Install missing packages
+#'
+#' CRAN packages are installed via install.packages().
+#' Archived packages (NHMSAR, netcontrol) are rebuilt from their .tar.gz
+#' source on the CRAN archive via devtools::install_url().
 #'
 #' @param packages Character vector of package names. If NULL (default),
 #'   checks all required packages.
@@ -102,21 +112,41 @@ install_missing_packages <- function(packages = NULL,
   installed <- packages %in% installed.packages()[, "Package"]
   missing <- packages[!installed]
 
-  if (length(missing) > 0) {
-    message("Installing missing packages: ", paste(missing, collapse = ", "))
-    install.packages(missing, repos = repos)
-
-    # Verify installation
-    still_missing <- missing[!(missing %in% installed.packages()[, "Package"])]
-    if (length(still_missing) > 0) {
-      warning("Failed to install: ", paste(still_missing, collapse = ", "))
-      return(invisible(FALSE))
-    } else {
-      message("All packages installed successfully!")
-      return(invisible(TRUE))
-    }
-  } else {
+  if (length(missing) == 0) {
     message("All required packages are already installed.")
+    return(invisible(TRUE))
+  }
+
+  # Split into archived vs CRAN packages
+  missing_archived <- missing[missing %in% names(ARCHIVED_PACKAGES)]
+  missing_cran     <- missing[!missing %in% names(ARCHIVED_PACKAGES)]
+
+  # Install CRAN packages
+  if (length(missing_cran) > 0) {
+    message("Installing CRAN packages: ", paste(missing_cran, collapse = ", "))
+    install.packages(missing_cran, repos = repos)
+  }
+
+  # Install archived packages from CRAN archive .tar.gz via devtools
+  if (length(missing_archived) > 0) {
+    if (!requireNamespace("devtools", quietly = TRUE)) {
+      message("Installing devtools (needed to rebuild archived packages)...")
+      install.packages("devtools", repos = repos)
+    }
+    for (pkg in missing_archived) {
+      url <- ARCHIVED_PACKAGES[[pkg]]
+      message("Installing archived package '", pkg, "' from ", url)
+      devtools::install_url(url)
+    }
+  }
+
+  # Verify installation
+  still_missing <- missing[!(missing %in% installed.packages()[, "Package"])]
+  if (length(still_missing) > 0) {
+    warning("Failed to install: ", paste(still_missing, collapse = ", "))
+    return(invisible(FALSE))
+  } else {
+    message("All packages installed successfully!")
     return(invisible(TRUE))
   }
 }
@@ -128,7 +158,10 @@ install_missing_packages <- function(packages = NULL,
 load_packages <- function(quietly = TRUE) {
   message("Loading required packages...")
 
+  installed_pkgs <- installed.packages()[, "Package"]
+
   loaded <- sapply(ALL_PACKAGES, function(pkg) {
+    if (!pkg %in% installed_pkgs) return(FALSE)
     success <- suppressPackageStartupMessages(
       requireNamespace(pkg, quietly = quietly)
     )
@@ -140,8 +173,8 @@ load_packages <- function(quietly = TRUE) {
 
   failed <- names(loaded)[!loaded]
   if (length(failed) > 0) {
-    warning("Failed to load packages: ", paste(failed, collapse = ", "))
-    message("Try installing them with: install_missing_packages()")
+    message("Not yet installed: ", paste(failed, collapse = ", "))
+    message("Run install_missing_packages() to install them.")
   } else {
     message("All packages loaded successfully!")
   }
@@ -154,6 +187,24 @@ load_packages <- function(quietly = TRUE) {
 #' @return Invisibly returns a data frame with package information
 print_package_summary <- function() {
   cat("\n=== SimMSAR Package Dependencies ===\n\n")
+
+  # Show archived packages first
+  if (length(ARCHIVED_PACKAGES) > 0) {
+    cat(sprintf("%-20s (%d packages)\n", "Archived (CRAN):", length(ARCHIVED_PACKAGES)))
+    for (pkg in names(ARCHIVED_PACKAGES)) {
+      installed <- pkg %in% installed.packages()[, "Package"]
+      status <- if (installed) "\u2713" else "\u2717"
+      cat(sprintf("  %s %-20s", status, pkg))
+      if (installed) {
+        version <- as.character(packageVersion(pkg))
+        cat(sprintf(" (v%s)", version))
+      } else {
+        cat(" [NOT INSTALLED]")
+      }
+      cat("\n")
+    }
+    cat("\n")
+  }
 
   for (category in names(PACKAGES)) {
     cat(sprintf("%-20s (%d packages)\n",
@@ -192,11 +243,8 @@ print_package_summary <- function() {
 }
 
 # =============================================================================
-# Auto-load packages when this file is sourced
+# Auto-install and load packages when this file is sourced
 # =============================================================================
 
-# Automatically load all packages when this file is sourced
-# Comment out the line below if you prefer manual control
+install_missing_packages()
 load_packages(quietly = TRUE)
-
-message("Dependency management loaded. Run print_package_summary() to see package status.")
