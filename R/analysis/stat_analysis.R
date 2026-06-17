@@ -331,7 +331,7 @@ if (has_any_failures) {
 # PART 2: FISHER-Z TRANSFORMATION
 # -----------------------------------------------------------------------------
 
-corr_cols <- c("Wtemp_corr", "Wtemp_ac_corr", "Wcont_corr", "Wcont_ac_corr")
+corr_cols <- c("Beta_corr", "Kappa_corr", "Beta_ac_corr")
 eps <- 1e-6
 
 for (cc in corr_cols) {
@@ -381,9 +381,9 @@ dat_sim <- corr_results_for_agg %>%
   )
 
 # OTHER METRICS: Aggregate on original scale
-other_metrics <- c("MAE_Wtemp", "MAE_Wcont", 
-                   "Wtemp_sen", "Wcont_sen",
-                   "Wtemp_spec", "Wcont_spec")
+other_metrics <- c("MAE_Beta", "MAE_Kappa",
+                   "Beta_sen", "Kappa_sen",
+                   "Beta_spec", "Kappa_spec")
 
 available_other_metrics <- other_metrics[other_metrics %in% names(corr_results_for_agg)]
 
@@ -1063,10 +1063,9 @@ for (outcome in corr_cols) {
 # LaTeX-formatted outcome labels (fully written out for readability)
 # AC = average controllability; corr. = Pearson correlation with true matrix
 outcome_tex_labels <- c(
-  Wtemp_corr    = "$W_{\\text{temp}}$ correlation",
-  Wtemp_ac_corr = "$\\mathrm{AC}(W_{\\text{temp}})$ correlation",
-  Wcont_corr    = "$W_{\\text{cont}}$ correlation",
-  Wcont_ac_corr = "$\\mathrm{AC}(W_{\\text{cont}})$ correlation"
+  Beta_corr     = "$\\mathrm{Beta}$ correlation",
+  Kappa_corr    = "$\\mathrm{Kappa}$ correlation",
+  Beta_ac_corr  = "$\\mathrm{AC}(\\mathrm{Beta})$ correlation"
 )
 
 # Human-readable random-effects structure labels
@@ -1256,16 +1255,15 @@ cat("Diagnostic plots saved to: diagnostics_all_models_mixed.pdf\n\n")
 # -----------------------------------------------------------------------------
 
 # Set variables to plot
-cols <- c("Wtemp_corr", "Wtemp_ac_corr", "Wcont_corr", "Wcont_ac_corr")
+cols <- c("Beta_corr", "Kappa_corr", "Beta_ac_corr")
 
 for (col_name in cols) {
-  
+
   title <- switch(
     col_name,
-    "Wtemp_corr"      = "Mean correlations for Wtemp",
-    "Wtemp_ac_corr"   = "Mean correlations for Wtemp average controllability",
-    "Wcont_corr"      = "Mean correlations for Wcont",
-    "Wcont_ac_corr"   = "Mean correlations for Wcont average controllability",
+    "Beta_corr"       = "Mean correlations for Beta",
+    "Kappa_corr"      = "Mean correlations for Kappa",
+    "Beta_ac_corr"    = "Mean correlations for Beta average controllability"
   )
   
   # Summarize data
@@ -1362,6 +1360,103 @@ for (col_name in cols) {
 }
 
 # -----------------------------------------------------------------------------
+# PART 7.1: Sensitivity/Specificity (DESCRIPTIVE ONLY -- no LMMs)
+# -----------------------------------------------------------------------------
+# Sens/Spec are reported descriptively (aggregated at simulation level, mean
+# across regimes, consistent with the rest of the aggregation), not modeled
+# via LMMs. One facet plot per network (Beta, Kappa), each showing both
+# sensitivity and specificity (distinguished by linetype).
+
+for (net in c("Beta", "Kappa")) {
+
+  sen_col  <- paste0(net, "_sen")
+  spec_col <- paste0(net, "_spec")
+
+  base_cols <- corr_results %>% select(Timesteps, Density, Nodes, Regimes)
+  senspec_long <- bind_rows(
+    base_cols %>% mutate(Metric = "Sensitivity", Value = corr_results[[sen_col]]),
+    base_cols %>% mutate(Metric = "Specificity", Value = corr_results[[spec_col]])
+  )
+
+  summary_data <- senspec_long %>%
+    group_by(Timesteps, Density, Nodes, Regimes, Metric) %>%
+    summarise(
+      mean_val = mean(Value, na.rm = TRUE),
+      sd_val   = sd(Value, na.rm = TRUE),
+      .groups  = "drop"
+    )
+
+  dodge <- position_dodge(width = 0.5)
+
+  p <- ggplot() +
+    geom_jitter(
+      data = senspec_long,
+      aes(x = Timesteps, y = Value, color = Nodes),
+      position = dodge, alpha = 0.15, size = 0.1
+    ) +
+    geom_line(
+      data = summary_data,
+      aes(x = as.numeric(as.character(Timesteps)), y = mean_val,
+          color = Nodes, group = interaction(Nodes, Metric), linetype = Metric),
+      position = dodge
+    ) +
+    geom_point(
+      data = summary_data,
+      aes(x = as.numeric(as.character(Timesteps)), y = mean_val, color = Nodes),
+      position = dodge, size = 1
+    ) +
+    facet_grid(Density ~ Regimes, labeller = label_value) +
+    labs(
+      title = paste("Mean sensitivity/specificity for", net),
+      x = "Timesteps",
+      y = "Mean value",
+      color = "Nodes",
+      linetype = "Metric"
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+      legend.position = "top",
+      legend.direction = "horizontal",
+      legend.justification = "right",
+      legend.title = element_text(size = 10),
+      legend.text = element_text(size = 9),
+      plot.margin = margin(t = 10, r = 30, b = 10, l = 10),
+      strip.text.y = element_text(vjust = -0.25),
+      panel.spacing = unit(0.2, "in"),
+      plot.title = element_text(hjust = 0.5)
+    )
+
+  label_x_right <- ggplot() +
+    theme_void() +
+    annotate("text", x = 0.5, y = 0.5, label = "Density", angle = -90, size = 4, hjust = 0)
+
+  label_y_top <- ggplot() +
+    theme_void() +
+    xlim(0, 1) +
+    ylim(0, 1) +
+    annotate("text", x = 0.4725, y = 0.5, label = "Regimes", size = 4, hjust = 0.5)
+
+  final_plot <- ggdraw() +
+    draw_plot(p, 0, 0, 1, 1) +
+    draw_plot(label_x_right, 0.96, 0.08, 0.03, 0.8) +
+    draw_plot(label_y_top,   0.1,  0.875, 0.84, 0.05)
+
+  output_file <- paste0("Plots/", net, "_senspec_plot_with_labels.pdf")
+
+  ggsave(
+    filename = output_file,
+    plot     = final_plot,
+    width    = 10,
+    height   = 8,
+    units    = "in",
+    dpi      = 600
+  )
+
+  message("saved: ", output_file)
+}
+
+# -----------------------------------------------------------------------------
 # FINAL SUMMARY: Model Quality Report
 # -----------------------------------------------------------------------------
 
@@ -1435,10 +1530,9 @@ if (exists("selection_bias_detected") && selection_bias_detected) {
 
 # Readable labels for outcomes
 outcome_labels <- c(
-  Wtemp_corr    = "W_temp (Correlation)",
-  Wtemp_ac_corr = "W_temp (Avg. Controllability)",
-  Wcont_corr    = "W_cont (Correlation)",
-  Wcont_ac_corr = "W_cont (Avg. Controllability)"
+  Beta_corr     = "Beta (Correlation)",
+  Kappa_corr    = "Kappa (Correlation)",
+  Beta_ac_corr  = "Beta (Avg. Controllability)"
 )
 
 # Collect coefficients + CIs from all primary models
