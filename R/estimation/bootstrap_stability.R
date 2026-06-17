@@ -83,10 +83,10 @@ block_bootstrap <- function(data, block_size = 20) {
 #'
 #' @return List with:
 #'   \describe{
-#'     \item{Wtemp_selected}{List of logical matrices indicating selected edges per regime}
-#'     \item{Wcont_selected}{List of logical matrices indicating selected edges per regime}
-#'     \item{Wtemp_probs}{List of selection probability matrices per regime}
-#'     \item{Wcont_probs}{List of selection probability matrices per regime}
+#'     \item{Beta_selected}{List of logical matrices indicating selected edges per regime (full matrix)}
+#'     \item{Kappa_selected}{List of logical matrices indicating selected off-diagonal edges per regime}
+#'     \item{Beta_probs}{List of selection probability matrices per regime}
+#'     \item{Kappa_probs}{List of selection probability matrices per regime}
 #'   }
 #'
 #' @export
@@ -98,11 +98,11 @@ bootstrap_stability_selection <- function(data_norm, M, order, MaxIter,
   T_len <- nrow(data_norm)
 
   # Initialize selection count matrices
-  Wtemp_counts <- list()
-  Wcont_counts <- list()
+  Beta_counts <- list()
+  Kappa_counts <- list()
   for (m in 1:M) {
-    Wtemp_counts[[m]] <- matrix(0, nrow = N, ncol = N)
-    Wcont_counts[[m]] <- matrix(0, nrow = N, ncol = N)
+    Beta_counts[[m]] <- matrix(0, nrow = N, ncol = N)
+    Kappa_counts[[m]] <- matrix(0, nrow = N, ncol = N)
   }
 
   successful_boots <- 0
@@ -142,46 +142,21 @@ bootstrap_stability_selection <- function(data_norm, M, order, MaxIter,
 
     successful_boots <- successful_boots + 1
 
-    # Extract estimates and count selections
+    # Extract estimates and count selections (directly on raw Beta/Kappa)
     boot_Betas <- boot_result$fit$theta$A
     boot_sigmas <- boot_result$fit$theta$sigma
 
     for (m in 1:M) {
-      # Get Beta and compute Wtemp
       boot_Beta <- boot_Betas[[m]]$A1
       boot_sigma <- boot_sigmas[[m]]
       boot_kappa <- tryCatch(solve(boot_sigma), error = function(e) NULL)
 
       if (is.null(boot_kappa)) next
 
-      # Compute Wtemp
-      boot_Wtemp <- matrix(0, nrow = N, ncol = N)
-      for (n in 1:N) {
-        for (o in 1:N) {
-          denom <- sqrt(boot_sigma[n, n] * boot_kappa[o, o] + boot_Beta[n, o]^2)
-          if (denom > 1e-10) {
-            boot_Wtemp[n, o] <- boot_Beta[n, o] / denom
-          }
-        }
-      }
-
-      # Compute Wcont
-      boot_Wcont <- matrix(0, nrow = N, ncol = N)
-      for (n in 1:N) {
-        for (o in 1:N) {
-          if (n != o) {
-            denom <- sqrt(boot_kappa[n, n] * boot_kappa[o, o])
-            if (denom > 1e-10) {
-              boot_Wcont[n, o] <- -boot_kappa[n, o] / denom
-            }
-          }
-        }
-      }
-
       # Count selections (non-zero edges)
       # Using a small threshold to account for numerical precision
-      Wtemp_counts[[m]] <- Wtemp_counts[[m]] + (abs(boot_Wtemp) > 1e-6)
-      Wcont_counts[[m]] <- Wcont_counts[[m]] + (abs(boot_Wcont) > 1e-6)
+      Beta_counts[[m]] <- Beta_counts[[m]] + (abs(boot_Beta) > 1e-6)
+      Kappa_counts[[m]] <- Kappa_counts[[m]] + (abs(boot_kappa) > 1e-6)
     }
   }
 
@@ -195,24 +170,24 @@ bootstrap_stability_selection <- function(data_norm, M, order, MaxIter,
   }
 
   # Compute selection probabilities
-  Wtemp_probs <- list()
-  Wcont_probs <- list()
-  Wtemp_selected <- list()
-  Wcont_selected <- list()
+  Beta_probs <- list()
+  Kappa_probs <- list()
+  Beta_selected <- list()
+  Kappa_selected <- list()
 
   for (m in 1:M) {
-    Wtemp_probs[[m]] <- Wtemp_counts[[m]] / successful_boots
-    Wcont_probs[[m]] <- Wcont_counts[[m]] / successful_boots
+    Beta_probs[[m]] <- Beta_counts[[m]] / successful_boots
+    Kappa_probs[[m]] <- Kappa_counts[[m]] / successful_boots
 
-    Wtemp_selected[[m]] <- Wtemp_probs[[m]] >= threshold
-    Wcont_selected[[m]] <- Wcont_probs[[m]] >= threshold
+    Beta_selected[[m]] <- Beta_probs[[m]] >= threshold
+    Kappa_selected[[m]] <- Kappa_probs[[m]] >= threshold
   }
 
   return(list(
-    Wtemp_selected = Wtemp_selected,
-    Wcont_selected = Wcont_selected,
-    Wtemp_probs = Wtemp_probs,
-    Wcont_probs = Wcont_probs,
+    Beta_selected = Beta_selected,
+    Kappa_selected = Kappa_selected,
+    Beta_probs = Beta_probs,
+    Kappa_probs = Kappa_probs,
     n_successful = successful_boots
   ))
 }
@@ -221,28 +196,32 @@ bootstrap_stability_selection <- function(data_norm, M, order, MaxIter,
 #' Apply Bootstrap Selection to Estimated Networks
 #'
 #' Zeros out edges that were not selected by bootstrap stability selection.
+#' The diagonal of Kappa is never zeroed (it is structurally dominant and
+#' required for positive definiteness / invertibility).
 #'
-#' @param est_Wtemps List of estimated Wtemp matrices
-#' @param est_Wconts List of estimated Wcont matrices
+#' @param est_Betas List of estimated Beta matrices
+#' @param est_Kappas List of estimated Kappa matrices
 #' @param stability_result Output from bootstrap_stability_selection
 #'
-#' @return List with filtered est_Wtemps and est_Wconts
+#' @return List with filtered est_Betas and est_Kappas
 #'
 #' @keywords internal
-apply_bootstrap_selection <- function(est_Wtemps, est_Wconts, stability_result) {
+apply_bootstrap_selection <- function(est_Betas, est_Kappas, stability_result) {
 
-  M <- length(est_Wtemps)
+  M <- length(est_Betas)
 
   for (m in 1:M) {
-    # Zero out non-selected Wtemp edges
-    est_Wtemps[[m]][!stability_result$Wtemp_selected[[m]]] <- 0
+    # Zero out non-selected Beta edges (full matrix)
+    est_Betas[[m]][!stability_result$Beta_selected[[m]]] <- 0
 
-    # Zero out non-selected Wcont edges
-    est_Wconts[[m]][!stability_result$Wcont_selected[[m]]] <- 0
+    # Zero out non-selected Kappa edges, but never the diagonal
+    kappa_not_selected <- !stability_result$Kappa_selected[[m]]
+    diag(kappa_not_selected) <- FALSE
+    est_Kappas[[m]][kappa_not_selected] <- 0
   }
 
   return(list(
-    est_Wtemps = est_Wtemps,
-    est_Wconts = est_Wconts
+    est_Betas = est_Betas,
+    est_Kappas = est_Kappas
   ))
 }
