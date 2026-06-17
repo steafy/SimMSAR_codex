@@ -567,8 +567,10 @@ for (t in seq_along(T)) {
 }
 
 # Trim to actual size (remove pre-allocated empty rows)
-msar_results <- msar_results[1:row_idx, ]
-sequence_results <- sequence_results[1:seq_idx, ]
+# NOTE: seq_len() is used rather than 1:n because 1:0 == c(1, 0) in R, which
+# would incorrectly select a row when n == 0 (e.g. all M == 1 conditions).
+msar_results <- msar_results[seq_len(row_idx), ]
+sequence_results <- sequence_results[seq_len(seq_idx), ]
 
 # Add S3 class
 class(msar_results) <- c("msar_results", class(msar_results))
