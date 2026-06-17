@@ -32,15 +32,13 @@ for (t in names(MSAR_models)) {
           Density = as.numeric(gsub("%", "", gsub("Density_", "", density))),
           Nodes = as.numeric(gsub("_Nodes", "", nodes)),
           Regimes = MSAR_results$Regimes <- as.numeric(gsub("_Regimes", "", regimes)),
-          N = stats$Wtemp_corr$N,
-          Wtemp_corr_mean = stats$Wtemp_corr$Mean,
-          Wtemp_corr_sd = stats$Wtemp_corr$Sd,
-          Wtemp_ac_corr_mean = stats$Wtemp_ac_corr$Mean,
-          Wtemp_ac_corr_sd = stats$Wtemp_ac_corr$Sd,
-          Wcont_corr_mean = stats$Wcont_corr$Mean,
-          Wcont_corr_sd = stats$Wcont_corr$Sd,
-          Wcont_ac_corr_mean = stats$Wcont_ac_corr$Mean,
-          Wcont_ac_corr_sd = stats$Wcont_ac_corr$Sd
+          N = stats$Beta_corr$N,
+          Beta_corr_mean = stats$Beta_corr$Mean,
+          Beta_corr_sd = stats$Beta_corr$Sd,
+          Beta_ac_corr_mean = stats$Beta_ac_corr$Mean,
+          Beta_ac_corr_sd = stats$Beta_ac_corr$Sd,
+          Kappa_corr_mean = stats$Kappa_corr$Mean,
+          Kappa_corr_sd = stats$Kappa_corr$Sd
         )
         data_list[[list_idx]] <- temp
       }
@@ -275,10 +273,9 @@ for (result in seq(6, ncol(MSAR_results) - 1, by = 2)) {
           font = list(size = 14)
         )
       }
-      if (mean_col == "Wtemp_corr_mean") {header <- "Mean correlations for Wtemp"}
-      if (mean_col == "Wcont_corr_mean") {header <- "Mean correlations for Wcont"}
-      if (mean_col == "Wtemp_ac_corr_mean") {header <- "Mean correlations for average controlablilty of Wtemp"}
-      if (mean_col == "Wcont_ac_corr_mean") {header <- "Mean correlations for average controlablilty of Wtemp"}
+      if (mean_col == "Beta_corr_mean") {header <- "Mean correlations for Beta"}
+      if (mean_col == "Kappa_corr_mean") {header <- "Mean correlations for Kappa"}
+      if (mean_col == "Beta_ac_corr_mean") {header <- "Mean correlations for average controllability of Beta"}
       
       
       # Adjust panel layout
