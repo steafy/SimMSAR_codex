@@ -246,8 +246,9 @@ for (t in seq_along(T)) {
           current_regimes <- current_row$regime_dynamics[[1]]
 
           # Normalize timeseries data
-          current_ts_norm <- huge.npn(current_ts, verbose = verbose)
-
+          #current_ts_norm <- huge.npn(current_ts, verbose = verbose)
+          current_ts_norm <- current_ts
+          
           # Make array from timeseries data
           timesteps <- T[t]                   # Set no. of timesteps
           d <- ncol(current_ts_norm)          # Set no. of nodes
