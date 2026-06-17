@@ -13,7 +13,7 @@
 #' @param MaxIter Integer. Maximum EM algorithm iterations.
 #' @param verbose Logical. If TRUE, prints detailed progress messages.
 #' @param min_edg_val Numeric. Minimum edge threshold - values below are set to zero.
-#'   Only used when use_bootstrap = FALSE.
+#'   Only used when use_bootstrap = FALSE. Never applied to the diagonal of Kappa.
 #' @param Timeseries_data Tibble. Output from \code{generate_timeseries} containing
 #'   simulated data and true dynamics in tibble format with list-columns.
 #' @param use_bootstrap Logical. If TRUE, use bootstrap stability selection instead
@@ -23,33 +23,28 @@
 #' @param bootstrap_threshold Numeric. Selection threshold (0-1) for bootstrap.
 #'   Edges selected in > threshold proportion of bootstraps are kept. Default: 0.6.
 #'
-#' @return A tibble (msar_results object) with the following columns:
+#' @return An msar_results tibble (one row per regime per successfully fitted
+#'   time series) with the following columns:
 #'   \describe{
-#'     \item{timesteps}{Number of time steps in the series}
-#'     \item{density}{Edge density of the network}
-#'     \item{nodes}{Number of nodes in the network}
-#'     \item{regimes}{Number of regimes in the model}
-#'     \item{ts_id}{Time series ID (1 to n_ts)}
-#'     \item{regime_id}{Regime ID within the time series}
-#'     \item{orig_Wtemp}{True temporal network (list-column)}
-#'     \item{est_Wtemp}{Estimated temporal network (list-column)}
-#'     \item{orig_Wcont}{True contemporaneous network (list-column)}
-#'     \item{est_Wcont}{Estimated contemporaneous network (list-column)}
-#'     \item{orig_Wtemp_ac}{True temporal network average controllability (list-column)}
-#'     \item{est_Wtemp_ac}{Estimated temporal network average controllability (list-column)}
-#'     \item{orig_Wcont_ac}{True contemporaneous network average controllability (list-column)}
-#'     \item{est_Wcont_ac}{Estimated contemporaneous network average controllability (list-column)}
-#'     \item{Wtemp_corr}{Correlation between true and estimated Wtemp}
-#'     \item{Wtemp_sen}{Sensitivity for Wtemp edge detection}
-#'     \item{Wtemp_spec}{Specificity for Wtemp edge detection}
-#'     \item{MAE_Wtemp}{Mean absolute error for Wtemp}
-#'     \item{Wtemp_ac_corr}{Correlation of average controllability for Wtemp}
-#'     \item{Wcont_corr}{Correlation between true and estimated Wcont}
-#'     \item{Wcont_sen}{Sensitivity for Wcont edge detection}
-#'     \item{Wcont_spec}{Specificity for Wcont edge detection}
-#'     \item{MAE_Wcont}{Mean absolute error for Wcont}
-#'     \item{Wcont_ac_corr}{Correlation of average controllability for Wcont}
+#'     \item{timesteps, density, nodes, regimes, ts_id, regime_id}{Condition identifiers}
+#'     \item{orig_Beta, est_Beta}{True / estimated temporal network (list-columns)}
+#'     \item{orig_Kappa, est_Kappa}{True / estimated contemporaneous network (list-columns)}
+#'     \item{orig_Beta_ac, est_Beta_ac}{True / estimated Beta average controllability (list-columns)}
+#'     \item{Beta_corr}{Correlation between true and estimated Beta (full matrix)}
+#'     \item{Beta_sen, Beta_spec}{Sensitivity/specificity for Beta edge detection (full matrix)}
+#'     \item{MAE_Beta}{Mean absolute error for Beta}
+#'     \item{Beta_ac_corr}{Correlation of average controllability for Beta}
+#'     \item{Kappa_corr}{Correlation between true and estimated Kappa (off-diagonal upper triangle)}
+#'     \item{Kappa_sen, Kappa_spec}{Sensitivity/specificity for Kappa edge detection (off-diagonal)}
+#'     \item{MAE_Kappa}{Mean absolute error for Kappa (off-diagonal)}
 #'   }
+#'
+#'   Regime-sequence recovery statistics (accuracy, Cohen's kappa; M > 1 only)
+#'   are attached as a separate tibble via \code{attr(result, "sequence_results")},
+#'   so that the primary return value remains a plain msar_results tibble for
+#'   backward compatibility with the rest of the pipeline (\code{stat_analysis.R}
+#'   etc. expect \code{inherits(MSAR_dynamics_list, "msar_results")} to hold and
+#'   treat it directly as a data frame).
 #'
 #' @details
 #' The function processes each time series through the following pipeline:
@@ -62,22 +57,28 @@
 #' 3. **Network Recovery**:
 #'    \itemize{
 #'      \item Extracts Beta (temporal) and Sigma (covariance) from fitted model
-#'      \item Computes Kappa = Sigma^{-1} (precision matrix)
-#'      \item Derives Wcont from Kappa: Wcont[i,j] = -Kappa[i,j] / sqrt(Kappa[i,i] * Kappa[j,j])
-#'      \item Derives Wtemp from Beta, Sigma, Kappa
-#'      \item Applies min_edg_val threshold to estimated networks
+#'      \item Computes Kappa = Sigma^{-1} (precision matrix), keeping its full diagonal
+#'      \item Applies min_edg_val threshold to estimated Beta (full matrix) and
+#'        to estimated Kappa (off-diagonal only)
 #'    }
 #'
 #' 4. **Regime Assignment**: For multi-regime models, matches estimated to true
-#'    regimes based on maximum Wtemp correlations using \code{assign_regimes}
+#'    regimes based on maximum Beta correlations using \code{assign_regimes}.
+#'    This single Beta-based mapping is applied consistently to Beta recovery,
+#'    Kappa recovery, Beta-AC recovery, and the regime-sequence recovery.
 #'
 #' 5. **Comparison Metrics**: Computes for each regime pair:
 #'    \itemize{
 #'      \item Correlation: Pearson correlation between vectorized networks
 #'      \item Sensitivity/Specificity: Edge detection accuracy
 #'      \item MAE: Mean absolute error of edge weights
-#'      \item Controllability correlation: For network control metrics
+#'      \item Average controllability correlation (Beta only)
 #'    }
+#'
+#' 6. **Regime-Sequence Recovery** (M > 1 only): The hard (argmax) estimated
+#'    regime sequence is derived from the smoothed probabilities, relabeled
+#'    using the Beta-based regime mapping, and compared to the true regime
+#'    sequence via accuracy and Cohen's kappa.
 #'
 #' Failed estimations (NULL fits or zero-variance networks) are skipped with warning messages.
 #'
@@ -114,11 +115,14 @@
 #'   Timeseries_data = ts_data
 #' )
 #'
-#' # Access results (now a tibble!)
+#' # Access results (a tibble!)
 #' results %>% filter(timesteps == 1000, density == 0.3)
 #'
 #' # Get summary statistics
 #' get_stats(results)
+#'
+#' # Regime-sequence recovery (M > 1 only)
+#' attr(results, "sequence_results")
 #' }
 #'
 #' @export
@@ -136,6 +140,8 @@ source("R/utils/senspec.R")
 source("R/utils/summarize_cor.R")
 source("R/utils/calculate_MAE.R")
 source("R/utils/undirected_metrics.R")
+source("R/utils/average_controllability.R")
+source("R/utils/regime_sequence_recovery.R")
 
 # Load bootstrap stability selection
 source("R/estimation/bootstrap_stability.R")
@@ -167,29 +173,40 @@ msar_results <- tibble::tibble(
   regime_id = integer(max_rows),
 
   # List-columns for network matrices
-  orig_Wtemp = vector("list", max_rows),
-  est_Wtemp = vector("list", max_rows),
-  orig_Wcont = vector("list", max_rows),
-  est_Wcont = vector("list", max_rows),
-  orig_Wtemp_ac = vector("list", max_rows),
-  est_Wtemp_ac = vector("list", max_rows),
-  orig_Wcont_ac = vector("list", max_rows),
-  est_Wcont_ac = vector("list", max_rows),
+  orig_Beta = vector("list", max_rows),
+  est_Beta = vector("list", max_rows),
+  orig_Kappa = vector("list", max_rows),
+  est_Kappa = vector("list", max_rows),
+  orig_Beta_ac = vector("list", max_rows),
+  est_Beta_ac = vector("list", max_rows),
 
   # Scalar metrics
-  Wtemp_corr = numeric(max_rows),
-  Wtemp_sen = numeric(max_rows),
-  Wtemp_spec = numeric(max_rows),
-  MAE_Wtemp = numeric(max_rows),
-  Wtemp_ac_corr = numeric(max_rows),
-  Wcont_corr = numeric(max_rows),
-  Wcont_sen = numeric(max_rows),
-  Wcont_spec = numeric(max_rows),
-  MAE_Wcont = numeric(max_rows),
-  Wcont_ac_corr = numeric(max_rows)
+  Beta_corr = numeric(max_rows),
+  Beta_sen = numeric(max_rows),
+  Beta_spec = numeric(max_rows),
+  MAE_Beta = numeric(max_rows),
+  Beta_ac_corr = numeric(max_rows),
+  Kappa_corr = numeric(max_rows),
+  Kappa_sen = numeric(max_rows),
+  Kappa_spec = numeric(max_rows),
+  MAE_Kappa = numeric(max_rows)
 )
 
 row_idx <- 0  # Index counter for tibble filling
+
+# Pre-allocate tibble for regime-sequence recovery (M > 1 only)
+max_seq_rows <- length(T) * length(Density) * length(N) * length(M) * n_ts
+
+sequence_results <- tibble::tibble(
+  timesteps = integer(max_seq_rows),
+  density = numeric(max_seq_rows),
+  nodes = integer(max_seq_rows),
+  regimes = integer(max_seq_rows),
+  ts_id = integer(max_seq_rows),
+  accuracy = numeric(max_seq_rows),
+  cohens_kappa = numeric(max_seq_rows)
+)
+seq_idx <- 0  # Index counter for sequence_results
 
 # markov regime-switching autoregression models with expectation maximization method
 for (t in seq_along(T)) {
@@ -208,7 +225,7 @@ for (t in seq_along(T)) {
             print(paste("Timeseries:", loc), quote = FALSE)
             print("", quote = FALSE)
           }
-  
+
           # Get complete data for current timeseries from tibble
           current_row <- Timeseries_data %>%
             filter(timesteps == T[t], density == Density[i],
@@ -230,7 +247,7 @@ for (t in seq_along(T)) {
 
           # Normalize timeseries data
           current_ts_norm <- huge.npn(current_ts, verbose = verbose)
-   
+
           # Make array from timeseries data
           timesteps <- T[t]                   # Set no. of timesteps
           d <- ncol(current_ts_norm)          # Set no. of nodes
@@ -261,14 +278,14 @@ for (t in seq_along(T)) {
 
          # Sys.sleep(1)
 
-          # Extract estimated Betas for all regimes from MSAR model
+          # Extract estimated Betas (temporal network) for all regimes from MSAR model
           est_Betas <- model_fit[["theta"]][["A"]]
 
           # Extract estimated sigma for all regimes
           est_sigmas <- model_fit[["theta"]][["sigma"]]
 
-          # Make kappa from estimated sigma for all regimes
-          est_kappas <- list()
+          # Make Kappa from estimated sigma for all regimes (contemporaneous network)
+          est_Kappas <- list()
           kappa_failed <- FALSE
           for(m in 1:M[k]) {
             est_kappa <- tryCatch(
@@ -279,7 +296,8 @@ for (t in seq_along(T)) {
               kappa_failed <- TRUE
               break
             }
-            est_kappas[[paste0("Regime", m)]] <- est_kappa
+            # Kappa is undirected; symmetrize to reduce numeric asymmetry
+            est_Kappas[[paste0("Regime", m)]] <- symmetrize_matrix(est_kappa)
           }
           if (kappa_failed) {
             message("ignore fit! ", "\n\tTimeseries_data: ", loc,
@@ -288,42 +306,15 @@ for (t in seq_along(T)) {
             next
           }
 
-
-          # Make estimated Wcont from estimated kappa
-          est_Wconts <- list()
+          # Collect raw estimated Beta matrices per regime
+          est_Betas_mat <- list()
           for(m in 1:M[k]) {
-            est_Wcont <- matrix(0, nrow = N[j], ncol = N[j])
-            est_kappa <- est_kappas[[m]]
-            for(n in 1:N[j]) {
-              for(o in 1:N[j]) {
-                if(n != o) {
-                  est_Wcont[n, o] <- -est_kappa[n, o] / sqrt(est_kappa[n, n] * est_kappa[o, o])
-            # Wcont is undirected; symmetrize to reduce numeric asymmetry
-            est_Wconts[[paste0("Regime", m)]] <- symmetrize_matrix(est_Wcont)
-          }
-              }
-            }
+            est_Betas_mat[[paste0("Regime", m)]] <- est_Betas[[m]][["A1"]]
           }
 
-          # Make estimated Wtemps from estimates of Beta, kappa and sigma
-          est_Wtemps <- list()
-          for(m in 1:M[k]) {
-            est_Wtemp <- matrix(0, nrow = N[j], ncol = N[j])
-            est_Beta <- est_Betas[[m]][["A1"]]
-            est_kappa <- est_kappas[[m]]
-            est_sigma <- est_sigmas[[m]]
-            for(n in 1:N[j]) {
-              for(o in 1:N[j]) { # raus: if(n != o) {
-                # if(n != o) {
-                #est_Wtemp[n, o] <- est_Beta[n, o] / sqrt(est_sigma[i, i] %*% est_kappa[j ,j] + est_Beta[i, j]^2)
-                est_Wtemp[n, o] <- est_Beta[n, o] / sqrt(est_sigma[n, n] %*% est_kappa[o, o] + est_Beta[n, o]^2)
-                est_Wtemps[[paste0("Regime", m)]] <- est_Wtemp
-                # }
-              }
-            }
-          }
-
-          # Remove spurious edges using bootstrap stability selection or simple threshold
+          # Remove spurious edges using bootstrap stability selection or simple threshold.
+          # The diagonal of Kappa is never thresholded (structurally dominant, required
+          # for positive definiteness).
           if (use_bootstrap) {
             # Bootstrap stability selection
             if (verbose) {
@@ -343,15 +334,15 @@ for (t in seq_along(T)) {
 
             if (!is.null(stability_result)) {
               # Apply bootstrap selection
-              filtered <- apply_bootstrap_selection(est_Wtemps, est_Wconts, stability_result)
-              est_Wtemps <- filtered$est_Wtemps
-              est_Wconts <- filtered$est_Wconts
+              filtered <- apply_bootstrap_selection(est_Betas_mat, est_Kappas, stability_result)
+              est_Betas_mat <- filtered$est_Betas
+              est_Kappas <- filtered$est_Kappas
 
               if (verbose) {
                 for (m in 1:M[k]) {
-                  n_wtemp <- sum(stability_result$Wtemp_selected[[m]])
-                  n_wcont <- sum(stability_result$Wcont_selected[[m]])
-                  message("  Regime ", m, ": ", n_wtemp, " Wtemp edges, ", n_wcont, " Wcont edges selected")
+                  n_beta <- sum(stability_result$Beta_selected[[m]])
+                  n_kappa <- sum(stability_result$Kappa_selected[[m]])
+                  message("  Regime ", m, ": ", n_beta, " Beta edges, ", n_kappa, " Kappa edges selected")
                 }
               }
             } else {
@@ -362,11 +353,11 @@ for (t in seq_along(T)) {
               for(m in 1:M[k]) {
                 for(n in 1:N[j]) {
                   for(o in 1:N[j]) {
-                    if(abs(est_Wtemps[[m]][n, o]) < min_edg_val){
-                      est_Wtemps[[m]][n, o] <- 0
+                    if(abs(est_Betas_mat[[m]][n, o]) < min_edg_val){
+                      est_Betas_mat[[m]][n, o] <- 0
                     }
-                    if(abs(est_Wconts[[m]][n, o]) < min_edg_val){
-                      est_Wconts[[m]][n, o] <- 0
+                    if(n != o && abs(est_Kappas[[m]][n, o]) < min_edg_val){
+                      est_Kappas[[m]][n, o] <- 0
                     }
                   }
                 }
@@ -377,59 +368,60 @@ for (t in seq_along(T)) {
             for(m in 1:M[k]) {
               for(n in 1:N[j]) {
                 for(o in 1:N[j]) {
-                  if(abs(est_Wtemps[[m]][n, o]) < min_edg_val){
-                    est_Wtemps[[m]][n, o] <- 0
+                  if(abs(est_Betas_mat[[m]][n, o]) < min_edg_val){
+                    est_Betas_mat[[m]][n, o] <- 0
                   }
-                  if(abs(est_Wconts[[m]][n, o]) < min_edg_val){
-                    est_Wconts[[m]][n, o] <- 0
+                  if(n != o && abs(est_Kappas[[m]][n, o]) < min_edg_val){
+                    est_Kappas[[m]][n, o] <- 0
                   }
                 }
               }
             }
           }
 
-          # Extract original Wtemp
-          get_org_Wtemp <- function(current_regimes) {
+          # Extract original Beta
+          get_org_Beta <- function(current_regimes) {
             vectors <- list()
             for (regime in names(current_regimes)) {
-              vec_name <- paste(regime, "Wtemp", sep = "_")
-              vectors[[vec_name]] <- as.vector(current_regimes[[regime]]$Wtemp)
+              vec_name <- paste(regime, "Beta", sep = "_")
+              vectors[[vec_name]] <- as.vector(current_regimes[[regime]]$Beta)
             }
             return(vectors)
           }
 
-          # Extract estimated Wtemp
-          get_est_Wtemp  <- function(model_fit) {  # vorher function(model_fit)
+          # Extract estimated Beta
+          get_est_Beta <- function(est_Betas_mat) {
             vectors <- list()
-            for (regime in names(est_Wtemps)) {
-              vec_name <- paste(regime, "Wtemp", sep = "_")
-              vectors[[vec_name]] <- as.vector(est_Wtemps[[regime]])
+            for (regime in names(est_Betas_mat)) {
+              vec_name <- paste(regime, "Beta", sep = "_")
+              vectors[[vec_name]] <- as.vector(est_Betas_mat[[regime]])
             }
             return(vectors)
           }
 
-          # Make matrix of vectors from original and estimated Wtemp
-          vecs_org_Wtemp <- get_org_Wtemp(current_regimes)
-          vecs_est_Wtemp <- get_est_Wtemp(model_fit)
+          # Make matrix of vectors from original and estimated Beta
+          vecs_org_Beta <- get_org_Beta(current_regimes)
+          vecs_est_Beta <- get_est_Beta(est_Betas_mat)
 
-          # Check if estimated Wtemp has sd == 0
-          if (any(sapply(vecs_est_Wtemp,function(vec) sd(vec) == 0))) {
+          # Check if estimated Beta has sd == 0
+          if (any(sapply(vecs_est_Beta, function(vec) sd(vec) == 0))) {
             pb$tick()
             next
           }
 
-          # Calculate correlations for each pair of original and estimated Wtemp
-          cor_results <- outer(names(vecs_org_Wtemp),
-                               names(vecs_est_Wtemp),
+          # Calculate correlations for each pair of original and estimated Beta
+          # (this Beta-based correlation matrix is also used for regime assignment)
+          cor_results <- outer(names(vecs_org_Beta),
+                               names(vecs_est_Beta),
                                Vectorize(function(n1, n2) {
-                                 cor(vecs_org_Wtemp[[n1]],
-                                     vecs_est_Wtemp[[n2]])
+                                 cor(vecs_org_Beta[[n1]],
+                                     vecs_est_Beta[[n2]])
                                }
                                )
           )
 
 
-          # Assign original and estimated regimes based on highest correlations of Wtemp
+          # Assign original and estimated regimes based on highest correlations of Beta
           if (M[k] > 1) {
             assigned_regimes <- assign_regimes(cor_results)
 
@@ -437,28 +429,24 @@ for (t in seq_along(T)) {
             for (m in 1:nrow(assigned_regimes)) {
               row_idx <- row_idx + 1
 
-              orig_Wtemp <- current_regimes[[assigned_regimes[[m, 1]]]][["Wtemp"]]
-              est_Wtemp <- est_Wtemps[[assigned_regimes[[m, 2]]]]
-              Wtemp_senspec <- senspec(orig_Wtemp, est_Wtemp)
-              MAE_Wtemp <- calculate_MAE(orig_Wtemp, est_Wtemp)
+              orig_Beta <- current_regimes[[assigned_regimes[[m, 1]]]][["Beta"]]
+              est_Beta <- est_Betas_mat[[assigned_regimes[[m, 2]]]]
+              Beta_senspec <- senspec(orig_Beta, est_Beta)
+              MAE_Beta <- calculate_MAE(orig_Beta, est_Beta)
 
-              est_Wtemp_ac <- ave_control_centrality(est_Wtemp)
-              orig_Wtemp_ac <- current_regimes[[assigned_regimes[[m, 1]]]][["Wtemp_ac"]]
-              cor_Wtemp_ac <- cor(orig_Wtemp_ac, est_Wtemp_ac, method = "pearson")
+              est_Beta_ac <- average_controllability(est_Beta)
+              orig_Beta_ac <- current_regimes[[assigned_regimes[[m, 1]]]][["Beta_ac"]]
+              cor_Beta_ac <- cor(orig_Beta_ac, est_Beta_ac, method = "pearson")
 
-              orig_Wcont <- current_regimes[[assigned_regimes[[m, 1]]]][["Wcont"]]
-              est_Wcont <- est_Wconts[[assigned_regimes[[m, 2]]]]
-              Wcont_senspec <- senspec_upper_tri(orig_Wcont, est_Wcont, diag = FALSE)
-              cor_Wcont <- cor(
-                vectorize_upper_tri(orig_Wcont, diag = FALSE),
-                vectorize_upper_tri(est_Wcont, diag = FALSE),
+              orig_Kappa <- current_regimes[[assigned_regimes[[m, 1]]]][["kappa"]]
+              est_Kappa <- est_Kappas[[assigned_regimes[[m, 2]]]]
+              Kappa_senspec <- senspec_upper_tri(orig_Kappa, est_Kappa, diag = FALSE)
+              cor_Kappa <- cor(
+                vectorize_upper_tri(orig_Kappa, diag = FALSE),
+                vectorize_upper_tri(est_Kappa, diag = FALSE),
                 method = "pearson"
               )
-              MAE_Wcont <- mae_upper_tri(orig_Wcont, est_Wcont, diag = FALSE)
-
-              est_Wcont_ac <- ave_control_centrality(est_Wcont)
-              orig_Wcont_ac <- current_regimes[[assigned_regimes[[m, 1]]]][["Wcont_ac"]]
-              cor_Wcont_ac <- cor(orig_Wcont_ac, est_Wcont_ac, method = "pearson")
+              MAE_Kappa <- mae_upper_tri(orig_Kappa, est_Kappa, diag = FALSE)
 
               # Store in tibble
               msar_results$timesteps[row_idx] <- T[t]
@@ -468,53 +456,77 @@ for (t in seq_along(T)) {
               msar_results$ts_id[row_idx] <- l
               msar_results$regime_id[row_idx] <- m
 
-              msar_results$orig_Wtemp[[row_idx]] <- orig_Wtemp
-              msar_results$est_Wtemp[[row_idx]] <- est_Wtemp
-              msar_results$orig_Wcont[[row_idx]] <- orig_Wcont
-              msar_results$est_Wcont[[row_idx]] <- est_Wcont
-              msar_results$orig_Wtemp_ac[[row_idx]] <- orig_Wtemp_ac
-              msar_results$est_Wtemp_ac[[row_idx]] <- est_Wtemp_ac
-              msar_results$orig_Wcont_ac[[row_idx]] <- orig_Wcont_ac
-              msar_results$est_Wcont_ac[[row_idx]] <- est_Wcont_ac
+              msar_results$orig_Beta[[row_idx]] <- orig_Beta
+              msar_results$est_Beta[[row_idx]] <- est_Beta
+              msar_results$orig_Kappa[[row_idx]] <- orig_Kappa
+              msar_results$est_Kappa[[row_idx]] <- est_Kappa
+              msar_results$orig_Beta_ac[[row_idx]] <- orig_Beta_ac
+              msar_results$est_Beta_ac[[row_idx]] <- est_Beta_ac
 
-              msar_results$Wtemp_corr[row_idx] <- assigned_regimes[[m, 3]]
-              msar_results$Wtemp_sen[row_idx] <- Wtemp_senspec[["sensitivity"]]
-              msar_results$Wtemp_spec[row_idx] <- Wtemp_senspec[["specificity"]]
-              msar_results$MAE_Wtemp[row_idx] <- MAE_Wtemp
-              msar_results$Wtemp_ac_corr[row_idx] <- cor_Wtemp_ac
-              msar_results$Wcont_corr[row_idx] <- cor_Wcont
-              msar_results$Wcont_sen[row_idx] <- Wcont_senspec[["sensitivity"]]
-              msar_results$Wcont_spec[row_idx] <- Wcont_senspec[["specificity"]]
-              msar_results$MAE_Wcont[row_idx] <- MAE_Wcont
-              msar_results$Wcont_ac_corr[row_idx] <- cor_Wcont_ac
+              msar_results$Beta_corr[row_idx] <- assigned_regimes[[m, 3]]
+              msar_results$Beta_sen[row_idx] <- Beta_senspec[["sensitivity"]]
+              msar_results$Beta_spec[row_idx] <- Beta_senspec[["specificity"]]
+              msar_results$MAE_Beta[row_idx] <- MAE_Beta
+              msar_results$Beta_ac_corr[row_idx] <- cor_Beta_ac
+              msar_results$Kappa_corr[row_idx] <- cor_Kappa
+              msar_results$Kappa_sen[row_idx] <- Kappa_senspec[["sensitivity"]]
+              msar_results$Kappa_spec[row_idx] <- Kappa_senspec[["specificity"]]
+              msar_results$MAE_Kappa[row_idx] <- MAE_Kappa
             }
+
+            # ---- Regime-sequence recovery (M > 1 only) ----
+            # True sequence: regime_sequence has length (totTime - 1); the
+            # trimmed timeseries data keeps only the last T rows (after warmup
+            # removal in generate_timeseries.R), so we align by taking the
+            # last T entries of the full true sequence.
+            true_seq_full <- current_row$regime_sequence[[1]]
+            true_seq <- utils::tail(true_seq_full, T[t])
+
+            # Estimated hard sequence from smoothed probabilities, relabeled
+            # using the Beta-based regime mapping (assigned_regimes: col 1 =
+            # true label, col 2 = estimated label that maps to it)
+            est_seq_raw <- get_hard_regime_sequence(model_fit[["smoothedprob"]])
+            label_map <- setNames(assigned_regimes[, 1], assigned_regimes[, 2])
+            est_seq_mapped <- as.integer(label_map[as.character(est_seq_raw)])
+
+            if (length(true_seq) == length(est_seq_mapped)) {
+              seq_idx <- seq_idx + 1
+              sequence_results$timesteps[seq_idx] <- T[t]
+              sequence_results$density[seq_idx] <- Density[i]
+              sequence_results$nodes[seq_idx] <- N[j]
+              sequence_results$regimes[seq_idx] <- M[k]
+              sequence_results$ts_id[seq_idx] <- l
+              sequence_results$accuracy[seq_idx] <- mean(true_seq == est_seq_mapped)
+              sequence_results$cohens_kappa[seq_idx] <- cohens_kappa_manual(true_seq, est_seq_mapped)
+            } else {
+              message("Skipping sequence recovery for ", loc,
+                      ": length mismatch (true = ", length(true_seq),
+                      ", est = ", length(est_seq_mapped), ")")
+            }
+
           } else {
-            # Single regime case
+            # Single regime case (no sequence recovery: trivial with M = 1)
             row_idx <- row_idx + 1
 
-            orig_Wtemp <- current_regimes[["Regime1"]][["Wtemp"]]
-            est_Wtemp <- est_Wtemps[["Regime1"]]
-            Wtemp_senspec <- senspec(orig_Wtemp, est_Wtemp)
-            cor_Wtemp <- cor(as.vector(orig_Wtemp), as.vector(est_Wtemp), method = "pearson")
-            MAE_Wtemp <- calculate_MAE(orig_Wtemp, est_Wtemp)
+            orig_Beta <- current_regimes[["Regime1"]][["Beta"]]
+            est_Beta <- est_Betas_mat[["Regime1"]]
+            Beta_senspec <- senspec(orig_Beta, est_Beta)
+            cor_Beta <- cor(as.vector(orig_Beta), as.vector(est_Beta), method = "pearson")
+            MAE_Beta <- calculate_MAE(orig_Beta, est_Beta)
 
-            est_Wtemp_ac <- ave_control_centrality(est_Wtemp)
-            orig_Wtemp_ac <- current_regimes[["Regime1"]][["Wtemp_ac"]]
-            cor_Wtemp_ac <- cor(orig_Wtemp_ac, est_Wtemp_ac, method = "pearson")
+            est_Beta_ac <- average_controllability(est_Beta)
+            orig_Beta_ac <- current_regimes[["Regime1"]][["Beta_ac"]]
+            cor_Beta_ac <- cor(orig_Beta_ac, est_Beta_ac, method = "pearson")
 
-            orig_Wcont <- current_regimes[["Regime1"]][["Wcont"]]
-            est_Wcont <- est_Wconts[["Regime1"]]
-            cor_Wcont <- cor(
-              vectorize_upper_tri(orig_Wcont, diag = FALSE),
-              vectorize_upper_tri(est_Wcont, diag = FALSE),
+            orig_Kappa <- current_regimes[["Regime1"]][["kappa"]]
+            est_Kappa <- est_Kappas[["Regime1"]]
+            cor_Kappa <- cor(
+              vectorize_upper_tri(orig_Kappa, diag = FALSE),
+              vectorize_upper_tri(est_Kappa, diag = FALSE),
               method = "pearson"
             )
-            Wcont_senspec <- senspec_upper_tri(orig_Wcont, est_Wcont, diag = FALSE)
-
-            est_Wcont_ac <- ave_control_centrality(est_Wcont)
-            orig_Wcont_ac <- current_regimes[["Regime1"]][["Wcont_ac"]]
-            cor_Wcont_ac <- cor(orig_Wcont_ac, est_Wcont_ac, method = "pearson")
-            MAE_Wcont <- mae_upper_tri(orig_Wcont, est_Wcont, diag = FALSE)
+            Kappa_senspec <- senspec_upper_tri(orig_Kappa, est_Kappa, diag = FALSE)
+            MAE_Kappa <- mae_upper_tri(orig_Kappa, est_Kappa, diag = FALSE)
 
             # Store in tibble
             msar_results$timesteps[row_idx] <- T[t]
@@ -524,25 +536,22 @@ for (t in seq_along(T)) {
             msar_results$ts_id[row_idx] <- l
             msar_results$regime_id[row_idx] <- 1
 
-            msar_results$orig_Wtemp[[row_idx]] <- orig_Wtemp
-            msar_results$est_Wtemp[[row_idx]] <- est_Wtemp
-            msar_results$orig_Wcont[[row_idx]] <- orig_Wcont
-            msar_results$est_Wcont[[row_idx]] <- est_Wcont
-            msar_results$orig_Wtemp_ac[[row_idx]] <- orig_Wtemp_ac
-            msar_results$est_Wtemp_ac[[row_idx]] <- est_Wtemp_ac
-            msar_results$orig_Wcont_ac[[row_idx]] <- orig_Wcont_ac
-            msar_results$est_Wcont_ac[[row_idx]] <- est_Wcont_ac
+            msar_results$orig_Beta[[row_idx]] <- orig_Beta
+            msar_results$est_Beta[[row_idx]] <- est_Beta
+            msar_results$orig_Kappa[[row_idx]] <- orig_Kappa
+            msar_results$est_Kappa[[row_idx]] <- est_Kappa
+            msar_results$orig_Beta_ac[[row_idx]] <- orig_Beta_ac
+            msar_results$est_Beta_ac[[row_idx]] <- est_Beta_ac
 
-            msar_results$Wtemp_corr[row_idx] <- cor_Wtemp
-            msar_results$Wtemp_sen[row_idx] <- Wtemp_senspec[["sensitivity"]]
-            msar_results$Wtemp_spec[row_idx] <- Wtemp_senspec[["specificity"]]
-            msar_results$MAE_Wtemp[row_idx] <- MAE_Wtemp
-            msar_results$Wtemp_ac_corr[row_idx] <- cor_Wtemp_ac
-            msar_results$Wcont_corr[row_idx] <- cor_Wcont
-            msar_results$Wcont_sen[row_idx] <- Wcont_senspec[["sensitivity"]]
-            msar_results$Wcont_spec[row_idx] <- Wcont_senspec[["specificity"]]
-            msar_results$MAE_Wcont[row_idx] <- MAE_Wcont
-            msar_results$Wcont_ac_corr[row_idx] <- cor_Wcont_ac
+            msar_results$Beta_corr[row_idx] <- cor_Beta
+            msar_results$Beta_sen[row_idx] <- Beta_senspec[["sensitivity"]]
+            msar_results$Beta_spec[row_idx] <- Beta_senspec[["specificity"]]
+            msar_results$MAE_Beta[row_idx] <- MAE_Beta
+            msar_results$Beta_ac_corr[row_idx] <- cor_Beta_ac
+            msar_results$Kappa_corr[row_idx] <- cor_Kappa
+            msar_results$Kappa_sen[row_idx] <- Kappa_senspec[["sensitivity"]]
+            msar_results$Kappa_spec[row_idx] <- Kappa_senspec[["specificity"]]
+            msar_results$MAE_Kappa[row_idx] <- MAE_Kappa
           }
 
           # Update progressbar
@@ -555,9 +564,13 @@ for (t in seq_along(T)) {
 
 # Trim to actual size (remove pre-allocated empty rows)
 msar_results <- msar_results[1:row_idx, ]
+sequence_results <- sequence_results[1:seq_idx, ]
 
 # Add S3 class
 class(msar_results) <- c("msar_results", class(msar_results))
+
+# Attach regime-sequence recovery as an attribute (see @return for rationale)
+attr(msar_results, "sequence_results") <- sequence_results
 
 return(msar_results)
 
@@ -586,75 +599,68 @@ get_stats <- function(msar_results,
   msar_results %>%
     dplyr::group_by(across(all_of(group_by))) %>%
     dplyr::summarise(
-      # Wtemp correlations
-      Wtemp_corr_mean = mean(Wtemp_corr, na.rm = TRUE),
-      Wtemp_corr_sd = sd(Wtemp_corr, na.rm = TRUE),
-      Wtemp_corr_median = median(Wtemp_corr, na.rm = TRUE),
-      Wtemp_corr_min = min(Wtemp_corr, na.rm = TRUE),
-      Wtemp_corr_max = max(Wtemp_corr, na.rm = TRUE),
+      # Beta correlations
+      Beta_corr_mean = mean(Beta_corr, na.rm = TRUE),
+      Beta_corr_sd = sd(Beta_corr, na.rm = TRUE),
+      Beta_corr_median = median(Beta_corr, na.rm = TRUE),
+      Beta_corr_min = min(Beta_corr, na.rm = TRUE),
+      Beta_corr_max = max(Beta_corr, na.rm = TRUE),
 
-      # Wtemp MAE
-      Wtemp_MAE_mean = mean(MAE_Wtemp, na.rm = TRUE),
-      Wtemp_MAE_sd = sd(MAE_Wtemp, na.rm = TRUE),
-      Wtemp_MAE_median = median(MAE_Wtemp, na.rm = TRUE),
-      Wtemp_MAE_min = min(MAE_Wtemp, na.rm = TRUE),
-      Wtemp_MAE_max = max(MAE_Wtemp, na.rm = TRUE),
+      # Beta MAE
+      Beta_MAE_mean = mean(MAE_Beta, na.rm = TRUE),
+      Beta_MAE_sd = sd(MAE_Beta, na.rm = TRUE),
+      Beta_MAE_median = median(MAE_Beta, na.rm = TRUE),
+      Beta_MAE_min = min(MAE_Beta, na.rm = TRUE),
+      Beta_MAE_max = max(MAE_Beta, na.rm = TRUE),
 
-      # Wtemp sensitivity
-      Wtemp_sen_mean = mean(Wtemp_sen, na.rm = TRUE),
-      Wtemp_sen_sd = sd(Wtemp_sen, na.rm = TRUE),
-      Wtemp_sen_median = median(Wtemp_sen, na.rm = TRUE),
-      Wtemp_sen_min = min(Wtemp_sen, na.rm = TRUE),
-      Wtemp_sen_max = max(Wtemp_sen, na.rm = TRUE),
+      # Beta sensitivity
+      Beta_sen_mean = mean(Beta_sen, na.rm = TRUE),
+      Beta_sen_sd = sd(Beta_sen, na.rm = TRUE),
+      Beta_sen_median = median(Beta_sen, na.rm = TRUE),
+      Beta_sen_min = min(Beta_sen, na.rm = TRUE),
+      Beta_sen_max = max(Beta_sen, na.rm = TRUE),
 
-      # Wtemp specificity
-      Wtemp_spec_mean = mean(Wtemp_spec, na.rm = TRUE),
-      Wtemp_spec_sd = sd(Wtemp_spec, na.rm = TRUE),
-      Wtemp_spec_median = median(Wtemp_spec, na.rm = TRUE),
-      Wtemp_spec_min = min(Wtemp_spec, na.rm = TRUE),
-      Wtemp_spec_max = max(Wtemp_spec, na.rm = TRUE),
+      # Beta specificity
+      Beta_spec_mean = mean(Beta_spec, na.rm = TRUE),
+      Beta_spec_sd = sd(Beta_spec, na.rm = TRUE),
+      Beta_spec_median = median(Beta_spec, na.rm = TRUE),
+      Beta_spec_min = min(Beta_spec, na.rm = TRUE),
+      Beta_spec_max = max(Beta_spec, na.rm = TRUE),
 
-      # Wtemp AC correlations
-      Wtemp_ac_corr_mean = mean(Wtemp_ac_corr, na.rm = TRUE),
-      Wtemp_ac_corr_sd = sd(Wtemp_ac_corr, na.rm = TRUE),
-      Wtemp_ac_corr_median = median(Wtemp_ac_corr, na.rm = TRUE),
-      Wtemp_ac_corr_min = min(Wtemp_ac_corr, na.rm = TRUE),
-      Wtemp_ac_corr_max = max(Wtemp_ac_corr, na.rm = TRUE),
+      # Beta AC correlations
+      Beta_ac_corr_mean = mean(Beta_ac_corr, na.rm = TRUE),
+      Beta_ac_corr_sd = sd(Beta_ac_corr, na.rm = TRUE),
+      Beta_ac_corr_median = median(Beta_ac_corr, na.rm = TRUE),
+      Beta_ac_corr_min = min(Beta_ac_corr, na.rm = TRUE),
+      Beta_ac_corr_max = max(Beta_ac_corr, na.rm = TRUE),
 
-      # Wcont correlations
-      Wcont_corr_mean = mean(Wcont_corr, na.rm = TRUE),
-      Wcont_corr_sd = sd(Wcont_corr, na.rm = TRUE),
-      Wcont_corr_median = median(Wcont_corr, na.rm = TRUE),
-      Wcont_corr_min = min(Wcont_corr, na.rm = TRUE),
-      Wcont_corr_max = max(Wcont_corr, na.rm = TRUE),
+      # Kappa correlations
+      Kappa_corr_mean = mean(Kappa_corr, na.rm = TRUE),
+      Kappa_corr_sd = sd(Kappa_corr, na.rm = TRUE),
+      Kappa_corr_median = median(Kappa_corr, na.rm = TRUE),
+      Kappa_corr_min = min(Kappa_corr, na.rm = TRUE),
+      Kappa_corr_max = max(Kappa_corr, na.rm = TRUE),
 
-      # Wcont MAE
-      Wcont_MAE_mean = mean(MAE_Wcont, na.rm = TRUE),
-      Wcont_MAE_sd = sd(MAE_Wcont, na.rm = TRUE),
-      Wcont_MAE_median = median(MAE_Wcont, na.rm = TRUE),
-      Wcont_MAE_min = min(MAE_Wcont, na.rm = TRUE),
-      Wcont_MAE_max = max(MAE_Wcont, na.rm = TRUE),
+      # Kappa MAE
+      Kappa_MAE_mean = mean(MAE_Kappa, na.rm = TRUE),
+      Kappa_MAE_sd = sd(MAE_Kappa, na.rm = TRUE),
+      Kappa_MAE_median = median(MAE_Kappa, na.rm = TRUE),
+      Kappa_MAE_min = min(MAE_Kappa, na.rm = TRUE),
+      Kappa_MAE_max = max(MAE_Kappa, na.rm = TRUE),
 
-      # Wcont sensitivity
-      Wcont_sen_mean = mean(Wcont_sen, na.rm = TRUE),
-      Wcont_sen_sd = sd(Wcont_sen, na.rm = TRUE),
-      Wcont_sen_median = median(Wcont_sen, na.rm = TRUE),
-      Wcont_sen_min = min(Wcont_sen, na.rm = TRUE),
-      Wcont_sen_max = max(Wcont_sen, na.rm = TRUE),
+      # Kappa sensitivity
+      Kappa_sen_mean = mean(Kappa_sen, na.rm = TRUE),
+      Kappa_sen_sd = sd(Kappa_sen, na.rm = TRUE),
+      Kappa_sen_median = median(Kappa_sen, na.rm = TRUE),
+      Kappa_sen_min = min(Kappa_sen, na.rm = TRUE),
+      Kappa_sen_max = max(Kappa_sen, na.rm = TRUE),
 
-      # Wcont specificity
-      Wcont_spec_mean = mean(Wcont_spec, na.rm = TRUE),
-      Wcont_spec_sd = sd(Wcont_spec, na.rm = TRUE),
-      Wcont_spec_median = median(Wcont_spec, na.rm = TRUE),
-      Wcont_spec_min = min(Wcont_spec, na.rm = TRUE),
-      Wcont_spec_max = max(Wcont_spec, na.rm = TRUE),
-
-      # Wcont AC correlations
-      Wcont_ac_corr_mean = mean(Wcont_ac_corr, na.rm = TRUE),
-      Wcont_ac_corr_sd = sd(Wcont_ac_corr, na.rm = TRUE),
-      Wcont_ac_corr_median = median(Wcont_ac_corr, na.rm = TRUE),
-      Wcont_ac_corr_min = min(Wcont_ac_corr, na.rm = TRUE),
-      Wcont_ac_corr_max = max(Wcont_ac_corr, na.rm = TRUE),
+      # Kappa specificity
+      Kappa_spec_mean = mean(Kappa_spec, na.rm = TRUE),
+      Kappa_spec_sd = sd(Kappa_spec, na.rm = TRUE),
+      Kappa_spec_median = median(Kappa_spec, na.rm = TRUE),
+      Kappa_spec_min = min(Kappa_spec, na.rm = TRUE),
+      Kappa_spec_max = max(Kappa_spec, na.rm = TRUE),
 
       # Sample size
       N = n(),
@@ -681,10 +687,9 @@ print.msar_results <- function(x, ...) {
   cat(sprintf("  Regimes: %s\n", paste(unique(x$regimes), collapse = ", ")))
   cat(sprintf("  Time series per condition: %d\n", max(x$ts_id)))
   cat("════════════════════════════════════════════════════════════════\n")
-  cat("\nSummary of Wtemp Correlations:\n")
-  print(summary(x$Wtemp_corr))
+  cat("\nSummary of Beta Correlations:\n")
+  print(summary(x$Beta_corr))
   cat("\nUse get_stats() for detailed summary statistics.\n")
   cat("Use dplyr::filter() to subset by conditions.\n")
   NextMethod()
 }
-
