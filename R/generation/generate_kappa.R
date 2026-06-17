@@ -26,8 +26,9 @@
 #'
 #' 3. **Verification**: Checks positive definiteness via eigenvalue analysis
 #'
-#' The precision matrix kappa is inverted to obtain the covariance matrix sigma,
-#' and used to calculate the contemporaneous network Wcont.
+#' The precision matrix kappa is inverted to obtain the covariance matrix sigma.
+#' Kappa itself (with its dominant diagonal) is used directly as the
+#' contemporaneous network.
 #'
 #' @note
 #' The diagonal dominance approach guarantees positive definiteness, which ensures

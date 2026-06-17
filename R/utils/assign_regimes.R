@@ -6,7 +6,7 @@
 #'
 #' @param cor_results Matrix of correlations between original and estimated regimes.
 #'   Rows represent original regimes, columns represent estimated regimes.
-#'   Typically correlations of vectorized network matrices (Wtemp or Wcont).
+#'   Typically correlations of vectorized network matrices (Beta or Kappa).
 #'
 #' @return Matrix with n rows (number of regimes) and 3 columns:
 #'   \describe{

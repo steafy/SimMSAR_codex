@@ -21,7 +21,7 @@
 #' This function is used throughout the estimation pipeline to aggregate
 #' performance metrics across multiple time series or regimes. For example:
 #' \itemize{
-#'   \item Summarizing Wtemp correlations across all time series in a condition
+#'   \item Summarizing Beta correlations across all time series in a condition
 #'   \item Aggregating MAE values for all estimated regimes
 #'   \item Computing average sensitivity/specificity
 #' }
