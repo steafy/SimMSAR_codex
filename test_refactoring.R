@@ -112,7 +112,7 @@ cat(sprintf("  Columns: %d\n", ncol(MSAR_dynamics_list)))
 
 # Check expected columns
 expected_cols <- c("timesteps", "density", "nodes", "regimes", "ts_id", "regime_id",
-                   "Wtemp_corr", "Wcont_corr")
+                   "Beta_corr", "Kappa_corr", "Beta_ac_corr")
 missing_cols <- setdiff(expected_cols, colnames(MSAR_dynamics_list))
 if (length(missing_cols) > 0) {
   cat("  WARNING: Missing columns:", paste(missing_cols, collapse = ", "), "\n")
@@ -150,7 +150,7 @@ cat("Test 6: Testing dplyr operations on results...\n")
 filtered <- tryCatch({
   MSAR_dynamics_list %>%
     filter(timesteps == T, density == Density) %>%
-    select(ts_id, regime_id, Wtemp_corr, Wcont_corr)
+    select(ts_id, regime_id, Beta_corr, Kappa_corr, Beta_ac_corr)
 }, error = function(e) {
   cat("ERROR in dplyr operations:\n")
   print(e)
@@ -199,6 +199,17 @@ stat_test <- tryCatch({
 
 cat("\n")
 
+# Test 8: Verify regime-sequence recovery attribute (M > 1 only)
+cat("Test 8: Testing regime-sequence recovery attribute...\n")
+seq_results <- attr(MSAR_dynamics_list, "sequence_results")
+if (is.null(seq_results)) {
+  cat("  WARNING: sequence_results attribute is missing\n")
+} else {
+  cat(sprintf("  ✓ sequence_results attribute present (%d rows)\n", nrow(seq_results)))
+  print(seq_results)
+}
+cat("\n")
+
 # Final summary
 cat("═══════════════════════════════════════════════════════════════\n")
 cat("  Test Summary\n")
@@ -221,5 +232,5 @@ cat("  # Get summary stats\n")
 cat("  get_stats(results)\n")
 cat("\n")
 cat("  # Access individual networks\n")
-cat("  results$orig_Wtemp[[1]]  # First original temporal network\n")
+cat("  results$orig_Beta[[1]]  # First original temporal network\n")
 cat("═══════════════════════════════════════════════════════════════\n")
