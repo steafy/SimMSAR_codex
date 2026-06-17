@@ -477,10 +477,14 @@ for (t in seq_along(T)) {
             # ---- Regime-sequence recovery (M > 1 only) ----
             # True sequence: regime_sequence has length (totTime - 1); the
             # trimmed timeseries data keeps only the last T rows (after warmup
-            # removal in generate_timeseries.R), so we align by taking the
-            # last T entries of the full true sequence.
+            # removal in generate_timeseries.R). The order-1 MSAR fit further
+            # drops the very first of those T rows (used only as the initial
+            # AR lag, no regime probability estimated for it), so the smoothed
+            # probabilities have T - 1 rows. We align by taking the last T
+            # entries of the full true sequence, then dropping the first of
+            # those to match.
             true_seq_full <- current_row$regime_sequence[[1]]
-            true_seq <- utils::tail(true_seq_full, T[t])
+            true_seq <- utils::tail(true_seq_full, T[t])[-1]
 
             # Estimated hard sequence from smoothed probabilities, relabeled
             # using the Beta-based regime mapping (assigned_regimes: col 1 =

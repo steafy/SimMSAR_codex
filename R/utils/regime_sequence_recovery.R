@@ -3,18 +3,21 @@
 #' Converts smoothed regime probabilities (from the EM forward-backward step)
 #' into a hard (argmax) regime sequence, one regime label per time point.
 #'
-#' @param smoothedprob Array of smoothed probabilities as returned by
-#'   \code{fit_msar} (\code{FB$probS}), with dimensions
-#'   (N.samples, T, M). Only N.samples = 1 is supported here, which is the
-#'   case used throughout this pipeline (one time series per fit).
+#' @param smoothedprob Matrix of smoothed probabilities as returned by
+#'   \code{fit_msar} (\code{FB$probS}) for the M > 1 case used throughout this
+#'   pipeline (one time series per fit, i.e. N.samples = 1). For N.samples = 1,
+#'   \code{fit_msar} drops the (size-1) sample dimension when reordering
+#'   regimes by ascending residual variance, so \code{FB$probS} is a plain
+#'   (T - 1) x M matrix (one row fewer than the input series, since the first
+#'   time point of an order-1 fit only serves as the initial AR lag and is not
+#'   assigned a regime probability).
 #'
-#' @return Integer vector of length T with the most probable regime
+#' @return Integer vector of length T - 1 with the most probable regime
 #'   (1 to M) at each time point.
 #'
 #' @export
 get_hard_regime_sequence <- function(smoothedprob) {
-  prob_mat <- smoothedprob[1, , ]
-  apply(prob_mat, 1, which.max)
+  apply(smoothedprob, 1, which.max)
 }
 
 
