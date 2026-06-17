@@ -35,13 +35,10 @@
 #'   Each regime_dynamics list contains:
 #'   \itemize{
 #'     \item mu: Mean vector
-#'     \item Wtemp: Temporal network (lag-1 effects)
-#'     \item Beta: Autoregressive coefficient matrix
+#'     \item Beta: Autoregressive coefficient matrix (temporal network)
 #'     \item sigma: Residual covariance matrix
-#'     \item kappa: Precision matrix
-#'     \item Wcont: Contemporaneous network (partial correlations)
-#'     \item Wtemp_ac: Average controllability for Wtemp
-#'     \item Wcont_ac: Average controllability for Wcont
+#'     \item kappa: Precision matrix (contemporaneous network)
+#'     \item Beta_ac: Average controllability for Beta
 #'   }
 #'
 #' @details
@@ -153,9 +150,10 @@ generate_timeseries <- function(Density,
             repeat {
               attempts <- attempts + 1
               W <- generate_netdyn(N[j], Density[i], min_edg_val, max_edg_val)
-              if (all(abs(W[["Wtemp"]][W[["Wtemp"]] != 0]) >= min_edg_val) &&
-                  all(abs(W[["Wcont"]][W[["Wcont"]] != 0]) >= min_edg_val) &&
-                  any(W[["Wcont"]] != 0)) {
+              kappa_offdiag <- W[["kappa"]][lower.tri(W[["kappa"]], diag = FALSE)]
+              if (all(abs(W[["Beta"]][W[["Beta"]] != 0]) >= min_edg_val) &&
+                  all(abs(kappa_offdiag[kappa_offdiag != 0]) >= min_edg_val) &&
+                  any(kappa_offdiag != 0)) {
                 break
               }
               if (attempts >= max_attempts) {
