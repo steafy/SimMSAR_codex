@@ -49,7 +49,7 @@ max_edg_val <- 1              # Maximum absolute edge weight in networks
 # -----------------------------------------------------------------------------
 # Time Series Parameters
 # -----------------------------------------------------------------------------
-T <- c(100, 200, 500, 1000, 1500, 2000, 2500, 3000, 3500)            # Number of time steps per time series
+T <- c(100, 250, 500, 1500, 3000)            # Number of time steps per time series
                               # Can be a vector: c(1000, 3500, 5000)
  
 warmup <- 50                  # Number of warmup time steps (discarded from analysis)
@@ -57,7 +57,7 @@ warmup <- 50                  # Number of warmup time steps (discarded from anal
 
 totTime <- T + warmup         # Total time steps including warmup
 
-n_ts <- 30                    # Number of time series to generate per condition
+n_ts <- 50                    # Number of time series to generate per condition
                               # Higher = more statistical power but slower
 
 # -----------------------------------------------------------------------------
