@@ -104,21 +104,26 @@ init_and_fit_msar_lasso <-
         message("retry: ", try, " of ", retry)
       }
       
-      
-      # Initialize model for NHMSAR
-      model_init <-
-        init_theta_msar(
-          data = data,
-          M = M,
-          order = order,
-          label = "HH",
-          verbose = verbose
-        )
-      
-      # try
+
+      # try (initialization is inside the tryCatch so that a degenerate
+      # init -- e.g. a kmeans split that starves a regime and yields a
+      # singular/NA covariance in NHMSAR:::Mstep.classif (det(Cxx) == NA) --
+      # triggers a retry with a fresh initialization instead of aborting the
+      # whole run. model_init is recomputed every loop iteration, so each
+      # retry still gets a new random initialization.)
       result <- tryCatch({
         # browser()
-        
+
+        # Initialize model for NHMSAR
+        model_init <-
+          init_theta_msar(
+            data = data,
+            M = M,
+            order = order,
+            label = "HH",
+            verbose = verbose
+          )
+
         # Fit MSAR model with NHMSAR
         model_fit <-
           fit_msar(
@@ -131,15 +136,15 @@ init_and_fit_msar_lasso <-
             lambda_fuse_A = lambda_fuse_A,
             lambda_fuse_sigma = lambda_fuse_sigma
           )
-        
+
         list(fit = model_fit, error = NULL)
-        
+
       }, error = function(e) {
-        message("fit_msar: can't fit: \n\tError: ", e$message)
+        message("init/fit_msar: can't fit: \n\tError: ", e$message)
         list(fit = NULL, error = e$message)
         # brower()
       }, warning = function(w) {
-        message("fit_msar: can't fit: \n\tWarning: ", w$message)
+        message("init/fit_msar: can't fit: \n\tWarning: ", w$message)
         list(fit = NULL, error = w$message)
         # brower()
       })
