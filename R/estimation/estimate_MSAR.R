@@ -204,7 +204,15 @@ sequence_results <- tibble::tibble(
   regimes = integer(max_seq_rows),
   ts_id = integer(max_seq_rows),
   accuracy = numeric(max_seq_rows),
-  cohens_kappa = numeric(max_seq_rows)
+  cohens_kappa = numeric(max_seq_rows),
+
+  # Raw sequences + confusion matrix retained so that alternative
+  # sequence-recovery metrics (ARI, balanced/per-regime accuracy, switch /
+  # transition recovery, ...) can be computed post-hoc without a re-run.
+  true_seq = vector("list", max_seq_rows),
+  est_seq = vector("list", max_seq_rows),
+  est_seq_raw = vector("list", max_seq_rows),
+  confusion = vector("list", max_seq_rows)
 )
 seq_idx <- 0  # Index counter for sequence_results
 
@@ -285,8 +293,25 @@ for (t in seq_along(T)) {
           # Extract estimated sigma for all regimes
           est_sigmas <- model_fit[["theta"]][["sigma"]]
 
-          # Make Kappa from estimated sigma for all regimes (contemporaneous network)
-          est_Kappas <- list()
+          # Make Kappa from estimated sigma for all regimes (contemporaneous network).
+          #
+          # solve() only errors on EXACT singularity. A merely *near*-singular
+          # sigma_hat inverts without error into a precision matrix with enormous
+          # entries (observed up to ~1e10), which then dominate MAE_Kappa. We
+          # therefore guard on the condition number (Variante A / NA): a regime
+          # whose covariance is too ill-conditioned to invert reliably has its
+          # Kappa recovery flagged invalid -- the Kappa metrics for that regime
+          # are written as NA downstream, while Beta recovery (unaffected by the
+          # covariance conditioning) is kept. A genuinely singular covariance
+          # (solve fails) still drops the whole fit, as before.
+          # Threshold sits in the wide gap between healthy fits (true sigma has
+          # condition number ~7-65; sample estimates stay < ~1e3) and the
+          # pathological near-singular inversions (~1e8) that produce the 1e8
+          # MAE_Kappa outliers. Residual moderate skew is handled by the robust
+          # (median / trimmed-mean) reporting in descriptives.R.
+          kappa_cond_max <- 1e6    # max acceptable condition number of sigma_hat
+          est_Kappas  <- list()
+          kappa_valid <- setNames(logical(M[k]), paste0("Regime", 1:M[k]))
           kappa_failed <- FALSE
           for(m in 1:M[k]) {
             est_kappa <- tryCatch(
@@ -299,6 +324,9 @@ for (t in seq_along(T)) {
             }
             # Kappa is undirected; symmetrize to reduce numeric asymmetry
             est_Kappas[[paste0("Regime", m)]] <- symmetrize_matrix(est_kappa)
+            # rcond = reciprocal condition number (small -> ill-conditioned).
+            rc <- tryCatch(rcond(est_sigmas[[m]]), error = function(e) 0)
+            kappa_valid[paste0("Regime", m)] <- is.finite(rc) && rc > 1 / kappa_cond_max
           }
           if (kappa_failed) {
             message("ignore fit! ", "\n\tTimeseries_data: ", loc,
@@ -440,14 +468,22 @@ for (t in seq_along(T)) {
               cor_Beta_ac <- cor(orig_Beta_ac, est_Beta_ac, method = "pearson")
 
               orig_Kappa <- current_regimes[[assigned_regimes[[m, 1]]]][["kappa"]]
-              est_Kappa <- est_Kappas[[assigned_regimes[[m, 2]]]]
-              Kappa_senspec <- senspec_upper_tri(orig_Kappa, est_Kappa, diag = FALSE)
-              cor_Kappa <- cor(
-                vectorize_upper_tri(orig_Kappa, diag = FALSE),
-                vectorize_upper_tri(est_Kappa, diag = FALSE),
-                method = "pearson"
-              )
-              MAE_Kappa <- mae_upper_tri(orig_Kappa, est_Kappa, diag = FALSE)
+              if (isTRUE(kappa_valid[[assigned_regimes[[m, 2]]]])) {
+                est_Kappa <- est_Kappas[[assigned_regimes[[m, 2]]]]
+                Kappa_senspec <- senspec_upper_tri(orig_Kappa, est_Kappa, diag = FALSE)
+                cor_Kappa <- cor(
+                  vectorize_upper_tri(orig_Kappa, diag = FALSE),
+                  vectorize_upper_tri(est_Kappa, diag = FALSE),
+                  method = "pearson"
+                )
+                MAE_Kappa <- mae_upper_tri(orig_Kappa, est_Kappa, diag = FALSE)
+              } else {
+                # ill-conditioned sigma_hat -> Kappa not trustworthy (Variante A)
+                est_Kappa <- NA
+                Kappa_senspec <- list(sensitivity = NA_real_, specificity = NA_real_)
+                cor_Kappa <- NA_real_
+                MAE_Kappa <- NA_real_
+              }
 
               # Store in tibble
               msar_results$timesteps[row_idx] <- T[t]
@@ -503,6 +539,18 @@ for (t in seq_along(T)) {
               sequence_results$ts_id[seq_idx] <- l
               sequence_results$accuracy[seq_idx] <- mean(true_seq == est_seq_mapped)
               sequence_results$cohens_kappa[seq_idx] <- cohens_kappa_manual(true_seq, est_seq_mapped)
+
+              # Store raw sequences and confusion matrix for flexible post-hoc
+              # evaluation. est_seq_raw retains the unmapped estimated labels so
+              # label-invariant metrics (e.g. ARI) can be computed independently
+              # of the Beta-based regime matching.
+              sequence_results$true_seq[[seq_idx]] <- true_seq
+              sequence_results$est_seq[[seq_idx]] <- est_seq_mapped
+              sequence_results$est_seq_raw[[seq_idx]] <- est_seq_raw
+              sequence_results$confusion[[seq_idx]] <- table(
+                true = factor(true_seq, levels = 1:M[k]),
+                est  = factor(est_seq_mapped, levels = 1:M[k])
+              )
             } else {
               message("Skipping sequence recovery for ", loc,
                       ": length mismatch (true = ", length(true_seq),
@@ -524,14 +572,22 @@ for (t in seq_along(T)) {
             cor_Beta_ac <- cor(orig_Beta_ac, est_Beta_ac, method = "pearson")
 
             orig_Kappa <- current_regimes[["Regime1"]][["kappa"]]
-            est_Kappa <- est_Kappas[["Regime1"]]
-            cor_Kappa <- cor(
-              vectorize_upper_tri(orig_Kappa, diag = FALSE),
-              vectorize_upper_tri(est_Kappa, diag = FALSE),
-              method = "pearson"
-            )
-            Kappa_senspec <- senspec_upper_tri(orig_Kappa, est_Kappa, diag = FALSE)
-            MAE_Kappa <- mae_upper_tri(orig_Kappa, est_Kappa, diag = FALSE)
+            if (isTRUE(kappa_valid[["Regime1"]])) {
+              est_Kappa <- est_Kappas[["Regime1"]]
+              cor_Kappa <- cor(
+                vectorize_upper_tri(orig_Kappa, diag = FALSE),
+                vectorize_upper_tri(est_Kappa, diag = FALSE),
+                method = "pearson"
+              )
+              Kappa_senspec <- senspec_upper_tri(orig_Kappa, est_Kappa, diag = FALSE)
+              MAE_Kappa <- mae_upper_tri(orig_Kappa, est_Kappa, diag = FALSE)
+            } else {
+              # ill-conditioned sigma_hat -> Kappa not trustworthy (Variante A)
+              est_Kappa <- NA
+              cor_Kappa <- NA_real_
+              Kappa_senspec <- list(sensitivity = NA_real_, specificity = NA_real_)
+              MAE_Kappa <- NA_real_
+            }
 
             # Store in tibble
             msar_results$timesteps[row_idx] <- T[t]
