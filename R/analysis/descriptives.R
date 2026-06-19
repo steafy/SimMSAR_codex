@@ -9,6 +9,7 @@ descriptive_stats <- function(dat_sim, corr_cols, available_other_metrics) {
   descriptive_stats_table <- data.frame(
     Metric = character(),
     Mean = numeric(),
+    TrimMean = numeric(),   # 5% trimmed mean: robust to skew/outliers
     SD = numeric(),
     Median = numeric(),
     Min = numeric(),
@@ -31,6 +32,7 @@ descriptive_stats <- function(dat_sim, corr_cols, available_other_metrics) {
         data.frame(
           Metric = outcome,
           Mean = round(mean(r_values, na.rm = TRUE), 2),
+          TrimMean = round(mean(r_values, trim = 0.05, na.rm = TRUE), 2),
           SD = round(sd(r_values, na.rm = TRUE), 2),
           Median = round(median(r_values, na.rm = TRUE), 2),
           Min = round(min(r_values, na.rm = TRUE), 2),
@@ -53,6 +55,7 @@ descriptive_stats <- function(dat_sim, corr_cols, available_other_metrics) {
         data.frame(
           Metric = metric,
           Mean = round(mean(values, na.rm = TRUE), 2),
+          TrimMean = round(mean(values, trim = 0.05, na.rm = TRUE), 2),
           SD = round(sd(values, na.rm = TRUE), 2),
           Median = round(median(values, na.rm = TRUE), 2),
           Min = round(min(values, na.rm = TRUE), 2),
@@ -65,6 +68,20 @@ descriptive_stats <- function(dat_sim, corr_cols, available_other_metrics) {
     }
   }
 
+  # Order rows by outcome block (not by metric type): first the temporal
+  # network Beta (correlation, MAE, sensitivity, specificity), then the average
+  # controllability of Beta, then the contemporaneous network Kappa. Metrics not
+  # listed keep their original order at the end.
+  metric_order <- c(
+    "Beta_corr", "MAE_Beta", "Beta_sen", "Beta_spec",   # Beta block
+    "Beta_ac_corr",                                       # AC(Beta) block
+    "Kappa_corr", "MAE_Kappa", "Kappa_sen", "Kappa_spec"  # Kappa block
+  )
+  descriptive_stats_table <- descriptive_stats_table[
+    order(match(descriptive_stats_table$Metric, metric_order)), , drop = FALSE
+  ]
+  rownames(descriptive_stats_table) <- NULL
+
   cat("\n=== DESCRIPTIVE STATISTICS (Simulation-Level, z-aggregated) ===\n\n")
   print(descriptive_stats_table, digits = 2, row.names = FALSE)
   cat("\n")
@@ -76,25 +93,50 @@ descriptive_stats <- function(dat_sim, corr_cols, available_other_metrics) {
   # Create formatted tables
   if (require("kableExtra", quietly = TRUE)) {
 
+    # Keep N (the number of non-NA observations that actually entered each
+    # metric) in the exported table -- with the Kappa condition-number guard,
+    # this now differs across metrics (Kappa metrics have fewer valid obs).
     descriptive_stats_formatted <- descriptive_stats_table %>%
-      select(Metric, Mean, SD, Median, Min, Max, Range) %>%
-      mutate(across(where(is.numeric), ~round(., 3)))
+      select(Metric, Mean, TrimMean, SD, Median, Min, Max, Range, N) %>%
+      mutate(across(c(Mean, TrimMean, SD, Median, Min, Max, Range), ~round(., 3)))
 
     # HTML table
     descriptive_stats_formatted %>%
       kable(caption = "Descriptive Statistics (Simulation-Level, z-aggregated)",
             format = "html",
-            align = c("l", rep("r", 6))) %>%
+            align = c("l", rep("r", 8))) %>%
       kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
       save_kable(file = "descriptive_statistics_table.html")
 
-    # LaTeX table
+    # LaTeX table: map the Metric column to math labels (subscript-per-row).
+    # Recovery correlations use r_<network>; MAE/Sensitivity/Specificity carry
+    # the network as a subscript. Applied only to the .tex export so console and
+    # HTML keep the readable raw names. Requires \usepackage{amsmath} for \text.
+    tex_metric_labels <- c(
+      Beta_corr    = "$r_{\\text{Beta}}$",
+      MAE_Beta     = "$\\text{MAE}_{\\text{Beta}}$",
+      Beta_sen     = "$\\text{Sens}_{\\text{Beta}}$",
+      Beta_spec    = "$\\text{Spec}_{\\text{Beta}}$",
+      Beta_ac_corr = "$r_{\\text{AC}}$",
+      Kappa_corr   = "$r_{\\text{Kappa}}$",
+      MAE_Kappa    = "$\\text{MAE}_{\\text{Kappa}}$",
+      Kappa_sen    = "$\\text{Sens}_{\\text{Kappa}}$",
+      Kappa_spec   = "$\\text{Spec}_{\\text{Kappa}}$"
+    )
+    descriptive_stats_tex <- descriptive_stats_formatted
+    mapped <- tex_metric_labels[descriptive_stats_tex$Metric]
+    descriptive_stats_tex$Metric <- ifelse(is.na(mapped),
+                                           descriptive_stats_tex$Metric, mapped)
+
+    # N shown as integer via per-column digits; sanitize.* = identity so the
+    # LaTeX math in the Metric column is written verbatim (not escaped).
     print(
-      xtable(descriptive_stats_formatted,
+      xtable(descriptive_stats_tex,
              caption = "Descriptive Statistics (Simulation-Level, z-aggregated)",
-             digits = 3),
+             digits = c(0, 0, 3, 3, 3, 3, 3, 3, 3, 0)),
       file = "descriptive_statistics_table.tex",
-      include.rownames = FALSE
+      include.rownames = FALSE,
+      sanitize.text.function = identity
     )
   }
 
