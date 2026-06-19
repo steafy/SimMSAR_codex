@@ -151,7 +151,8 @@ generate_timeseries <- function(Density,
               attempts <- attempts + 1
               W <- generate_netdyn(N[j], Density[i], min_edg_val, max_edg_val)
               kappa_offdiag <- W[["kappa"]][lower.tri(W[["kappa"]], diag = FALSE)]
-              if (all(abs(W[["Beta"]][W[["Beta"]] != 0]) >= min_edg_val) &&
+              if (isTRUE(W[["Beta_stability"]]) &&
+                  all(abs(W[["Beta"]][W[["Beta"]] != 0]) >= min_edg_val) &&
                   all(abs(kappa_offdiag[kappa_offdiag != 0]) >= min_edg_val) &&
                   any(kappa_offdiag != 0)) {
                 break
