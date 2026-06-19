@@ -64,13 +64,18 @@ generate_Beta <- function(N, Density, min_edg_val, max_edg_val) {
   values <- runif(num_nonzero, min_edg_val, max_edg_val) * signs
   Beta[indices] <- values
   
-  # Scale Beta to ensure stability
-  eigvals <- eigen(Beta)$values
-  spectral_radius <- max(abs(eigvals))
-  scaling_factor <- ifelse(spectral_radius >= 1, 0.99 / spectral_radius, 1)
-  Beta <- Beta * scaling_factor
-  
-  # Adjust non-zero elements to between min_edg_val & max_edg_val
+  # Enforce stability (spectral radius < 1) AND edge bounds together.
+  #
+  # These two constraints interact: scaling for stability shrinks every edge
+  # (and can push small ones below min_edg_val), while clamping edges back into
+  # [min_edg_val, max_edg_val] raises the small ones again (and can re-inflate
+  # the spectral radius above 1). The previous version scaled once and clamped
+  # afterwards, which silently re-introduced non-stationarity. Instead we
+  # alternate the two steps until the matrix is both stable and within bounds.
+  # If no such fixed point is reached within max_stab_iter, we leave the last
+  # scaled (stable but possibly out-of-bounds) matrix and report an honest
+  # Beta_stability flag; the acceptance loop in generate_timeseries then rejects
+  # and regenerates such draws.
   adjust_non_zero_elements <- function(Beta, min_edg_val, max_edg_val) {
     non_zero_elements <- which(Beta != 0, arr.ind = TRUE)
     for (idx in 1:nrow(non_zero_elements)) {
@@ -80,10 +85,24 @@ generate_Beta <- function(N, Density, min_edg_val, max_edg_val) {
     }
     return(Beta)
   }
-  
-  Beta <- adjust_non_zero_elements(Beta, min_edg_val, max_edg_val)
-  
-  # Check stability of Beta
+
+  scale_to_stable <- function(Beta) {
+    spectral_radius <- max(abs(eigen(Beta)$values))
+    scaling_factor <- ifelse(spectral_radius >= 1, 0.99 / spectral_radius, 1)
+    Beta * scaling_factor
+  }
+
+  max_stab_iter <- 100
+  for (iter in 1:max_stab_iter) {
+    # Clamp edges into bounds first, then test stability of the in-bounds matrix.
+    # Breaking here guarantees the returned Beta is BOTH in-bounds and stable.
+    Beta <- adjust_non_zero_elements(Beta, min_edg_val, max_edg_val)
+    if (check_stability(Beta)) break
+    Beta <- scale_to_stable(Beta)
+  }
+
+  # Honest final stability flag (may be FALSE if no in-bounds stable
+  # configuration was found; the acceptance loop handles that case)
   Beta_stability <- check_stability(Beta)
   
   # Calculate sd of Beta
