@@ -21,9 +21,13 @@ add_fisher_z <- function(corr_results, corr_cols) {
   # Check for extreme values
   z_cols <- paste0(corr_cols, "_z")
   for (zc in z_cols) {
-    n_extreme <- sum(abs(corr_results[[zc]]) > 5)
+    n_extreme <- sum(abs(corr_results[[zc]]) > 5, na.rm = TRUE)
+    n_na      <- sum(is.na(corr_results[[zc]]))
     if (n_extreme > 0) {
       cat("  ⚠", zc, "has", n_extreme, "extreme values (|z| > 5)\n")
+    }
+    if (n_na > 0) {
+      cat("  ⚠", zc, "has", n_na, "NA values\n")
     }
   }
 
