@@ -34,6 +34,7 @@ for (pkg in required_packages) {
 # Load analysis modules
 # -----------------------------------------------------------------------------
 source("R/analysis/data_prep.R")      # PART 1: data prep + selection-bias reporting
+source("R/analysis/feasibility.R")    # PART 1.4: feasibility (convergence) model
 source("R/analysis/transform.R")      # PART 2-4: Fisher-z, aggregation, scaling
 source("R/analysis/descriptives.R")   # PART 3.1: descriptive statistics
 source("R/analysis/modeling.R")       # PART 5: mixed-effects model fitting
@@ -53,6 +54,11 @@ corr_cols <- c("Beta_corr", "Kappa_corr", "Beta_ac_corr")
 corr_results <- prepare_corr_results(MSAR_dynamics_list)
 est          <- analyze_estimation_process(corr_results)
 bias         <- report_selection_bias(est)
+
+# PART 1.4: Feasibility model -- P(successful estimation) ~ design factors.
+# The "can you estimate it?" half of the two-part report (complements the
+# recovery LMMs, which are conditional on a successful fit).
+feasibility  <- fit_feasibility_model(est$failure_analysis)
 
 # PART 2: Fisher-z transformation of correlation outcomes
 corr_results <- add_fisher_z(corr_results, corr_cols)
