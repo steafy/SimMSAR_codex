@@ -82,10 +82,12 @@ export_comparison_table <- function(all_results, corr_cols) {
 
   # LaTeX-formatted outcome labels (fully written out for readability)
   # AC = average controllability; corr. = Pearson correlation with true matrix
+  # Recovery-correlation symbols (subscript style; requires amsmath for \text).
+  # r_AC is the correlation of the (nodal) average controllability AC(Beta).
   outcome_tex_labels <- c(
-    Beta_corr     = "$\\mathrm{Beta}$ correlation",
-    Kappa_corr    = "$\\mathrm{Kappa}$ correlation",
-    Beta_ac_corr  = "$\\mathrm{AC}(\\mathrm{Beta})$ correlation"
+    Beta_corr     = "$r_{\\text{Beta}}$",
+    Kappa_corr    = "$r_{\\text{Kappa}}$",
+    Beta_ac_corr  = "$r_{\\text{AC}}$"
   )
 
   # Human-readable random-effects structure labels
@@ -120,6 +122,9 @@ export_comparison_table <- function(all_results, corr_cols) {
     data.frame(
       Outcome       = outcome_tex_labels[[outcome]],
       RE_structure  = format_re(res$random_effects_formula),
+      # Effective N actually entering the model (listwise-complete obs). With the
+      # Kappa condition-number guard this is smaller for Kappa-based outcomes.
+      N             = stats::nobs(res$primary_model),
       AIC_main      = round(AIC(res$main),             1),
       AIC_2way      = round(AIC(res$two_way),          1),
       AIC_3way      = round(AIC(res$three_way),        1),
@@ -135,7 +140,7 @@ export_comparison_table <- function(all_results, corr_cols) {
 
   # Console-friendly column names (Conv_note kept for console; dropped in LaTeX)
   colnames(comparison_all) <- c(
-    "Outcome", "Random Effects", "AIC (Main)", "AIC (2-Way)", "AIC (3-Way)",
+    "Outcome", "Random Effects", "N", "AIC (Main)", "AIC (2-Way)", "AIC (3-Way)",
     "Primary Model", "dAIC (2w-3w)", "R2_m", "R2_c", "ICC", "Conv./Sing."
   )
 
@@ -174,6 +179,7 @@ export_comparison_table <- function(all_results, corr_cols) {
       "    ",
       row["Outcome"],          " & ",
       row["Random Effects"],   " & ",
+      row["N"],                " & ",
       row["AIC (Main)"],       " & ",
       row["AIC (2-Way)"],      " & ",
       row["AIC (3-Way)"],      " & ",
@@ -208,9 +214,9 @@ export_comparison_table <- function(all_results, corr_cols) {
     "  }",
     "  \\label{tab:model_comparison}",
     "  \\begin{adjustbox}{max width=\\textwidth}",
-    "  \\begin{tabular}{@{}llrrrcrrrr@{}}",
+    "  \\begin{tabular}{@{}llrrrrcrrrr@{}}",
     "    \\toprule",
-    "    Outcome & RE structure &",
+    "    Outcome & RE structure & $N$ &",
     "    $\\text{AIC}_{\\text{main}}$ & $\\text{AIC}_{\\text{2w}}$ & $\\text{AIC}_{\\text{3w}}$ &",
     "    Primary & $\\Delta\\text{AIC}_{\\text{2w}-\\text{3w}}$ &",
     "    $R^2_m$ & $R^2_c$ & ICC \\\\",
