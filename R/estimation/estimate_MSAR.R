@@ -46,6 +46,10 @@
 #'   etc. expect \code{inherits(MSAR_dynamics_list, "msar_results")} to hold and
 #'   treat it directly as a data frame).
 #'
+#'   A diagnostic log of discarded fits (reason + design cell) is attached via
+#'   \code{attr(result, "failure_log")}; summarise it with
+#'   \code{\link{summarize_failures}}.
+#'
 #' @details
 #' The function processes each time series through the following pipeline:
 #'
@@ -216,6 +220,28 @@ sequence_results <- tibble::tibble(
 )
 seq_idx <- 0  # Index counter for sequence_results
 
+# --- Diagnostic failure log -------------------------------------------------
+# Records WHY and WHERE each fit was discarded so the missingness mechanism
+# (the non-random clustering of failures in hard cells) can be diagnosed
+# post-hoc by tabulating reasons against design cells. Purely additive: does
+# not alter msar_results / sequence_results. Attached as
+# attr(msar_results, "failure_log"); summarise with summarize_failures().
+failure_records <- list()
+log_failure <- function(stage, error_msg) {
+  # t, i, j, k, l are resolved from the enclosing loop at call time.
+  failure_records[[length(failure_records) + 1L]] <<- tibble::tibble(
+    timesteps = T[t],
+    density   = Density[i],
+    nodes     = N[j],
+    regimes   = M[k],
+    ts_id     = l,
+    stage     = stage,
+    error     = if (is.null(error_msg) || length(error_msg) == 0)
+                  NA_character_
+                else paste(trimws(error_msg), collapse = " ")
+  )
+}
+
 # markov regime-switching autoregression models with expectation maximization method
 for (t in seq_along(T)) {
   for (i in seq_along(Density)) {
@@ -243,6 +269,7 @@ for (t in seq_along(T)) {
           if (nrow(current_row) == 0) {
             message("No timeseries data found for condition: ",
                     "T=", T[t], " D=", Density[i], " N=", N[j], " M=", M[k], " ts=", l)
+            log_failure("no_data", "no timeseries data found for condition")
             pb$tick()
             next
           }
@@ -281,6 +308,7 @@ for (t in seq_along(T)) {
 
           if (is.null(model_fit)) {
             message("ignore fit! ", "\n\tTimeseries_data: ", loc, "\n\terror: ", error)
+            log_failure("fit_null", error)
             pb$tick()
             next
           }
@@ -331,6 +359,7 @@ for (t in seq_along(T)) {
           if (kappa_failed) {
             message("ignore fit! ", "\n\tTimeseries_data: ", loc,
                     "\n\terror: singular covariance matrix in at least one regime")
+            log_failure("singular_cov", "singular covariance matrix in at least one regime")
             pb$tick()
             next
           }
@@ -635,8 +664,97 @@ class(msar_results) <- c("msar_results", class(msar_results))
 # Attach regime-sequence recovery as an attribute (see @return for rationale)
 attr(msar_results, "sequence_results") <- sequence_results
 
+# Assemble diagnostic failure log (see comment near failure_records above).
+# Empty tibble with the correct schema if nothing failed, so downstream code
+# (summarize_failures) can rely on a stable structure.
+failure_log <- if (length(failure_records) > 0) {
+  dplyr::bind_rows(failure_records)
+} else {
+  tibble::tibble(
+    timesteps = integer(0), density = numeric(0), nodes = integer(0),
+    regimes = integer(0), ts_id = integer(0),
+    stage = character(0), error = character(0)
+  )
+}
+attr(msar_results, "failure_log") <- failure_log
+
 return(msar_results)
 
+}
+
+
+#' Summarise Discarded-Fit Reasons from estimate_MSAR()
+#'
+#' Tabulates the diagnostic failure log attached as
+#' \code{attr(result, "failure_log")} by coarse error type, estimation stage,
+#' and design cell. Use this to diagnose the missingness mechanism: which kind
+#' of numerical failure dominates which condition.
+#'
+#' @param msar_results An msar_results object from \code{estimate_MSAR()}.
+#' @param by Character vector of design columns to break failures down by.
+#'   Default groups by all four design factors.
+#'
+#' @return Invisibly, a list with:
+#'   \describe{
+#'     \item{by_type}{Counts per estimation stage and coarse error type}
+#'     \item{by_cell}{Failure counts per design cell and error type}
+#'     \item{raw}{The underlying failure_log with an added \code{error_type}}
+#'   }
+#'   Also prints \code{by_type} for a quick overview.
+#'
+#' @details
+#' \code{stage} distinguishes \emph{where} the fit was dropped:
+#' \itemize{
+#'   \item \code{fit_null}: EM aborted on error \emph{or warning} across all
+#'     retries (\code{init_and_fit_msar_lasso} returned NULL).
+#'   \item \code{singular_cov}: an estimated regime covariance was exactly
+#'     singular (\code{solve()} failed), dropping the whole fit.
+#'   \item \code{no_data}: no simulated series matched the condition (lookup
+#'     miss, not an estimation failure).
+#' }
+#' \code{error_type} is a coarse, regex-based classification of the captured
+#' message string; extend the patterns as new messages appear.
+#'
+#' @seealso \code{\link{estimate_MSAR}}
+#' @export
+summarize_failures <- function(msar_results,
+                               by = c("timesteps", "density", "nodes", "regimes")) {
+
+  fl <- attr(msar_results, "failure_log")
+  if (is.null(fl) || nrow(fl) == 0) {
+    message("No failures logged.")
+    return(invisible(NULL))
+  }
+
+  # Coarse classification of the captured error/warning string. Patterns are
+  # checked in order; first match wins. Extend as new messages show up.
+  classify <- function(x) {
+    x <- tolower(ifelse(is.na(x), "", x))
+    dplyr::case_when(
+      grepl("singular|rcond|cxx|det\\(|positive.?definite|chol", x) ~ "singular/ill-conditioned covariance",
+      grepl("nan|non-finite|infinite|\\binf\\b|missing value|na/nan", x) ~ "non-finite / NaN in likelihood",
+      grepl("lars|glmnet|lasso|lambda|penal", x) ~ "LASSO / penalised-path issue",
+      grepl("no timeseries data", x) ~ "no data (lookup miss)",
+      x == "" ~ "unclassified (empty)",
+      TRUE ~ "other"
+    )
+  }
+
+  fl <- fl %>% dplyr::mutate(error_type = classify(error))
+
+  by_type <- fl %>%
+    dplyr::count(stage, error_type, name = "n", sort = TRUE)
+
+  by_cell <- fl %>%
+    dplyr::count(dplyr::across(dplyr::all_of(by)), error_type, name = "n") %>%
+    dplyr::arrange(dplyr::desc(n))
+
+  cat("=== DISCARDED FITS: reason breakdown ===\n")
+  cat(sprintf("Total logged failures: %d\n\n", nrow(fl)))
+  print(by_type, n = Inf)
+  cat("\nUse $by_cell for the per-condition breakdown, $raw for the full log.\n")
+
+  invisible(list(by_type = by_type, by_cell = by_cell, raw = fl))
 }
 
 

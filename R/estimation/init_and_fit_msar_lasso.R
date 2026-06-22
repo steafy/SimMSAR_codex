@@ -141,11 +141,17 @@ init_and_fit_msar_lasso <-
 
       }, error = function(e) {
         message("init/fit_msar: can't fit: \n\tError: ", e$message)
-        list(fit = NULL, error = e$message)
+        # Prefix tags the failure kind so the diagnostic failure_log /
+        # summarize_failures() can distinguish genuine errors from warnings
+        # that were promoted to fatal by this handler.
+        list(fit = NULL, error = paste0("error: ", e$message))
         # brower()
       }, warning = function(w) {
         message("init/fit_msar: can't fit: \n\tWarning: ", w$message)
-        list(fit = NULL, error = w$message)
+        # NOTE: any warning is currently promoted to a fatal failure (fit = NULL).
+        # The "warning:" tag lets us measure how many discards are warnings only,
+        # i.e. how much of the missingness this strictness manufactures.
+        list(fit = NULL, error = paste0("warning: ", w$message))
         # brower()
       })
       
