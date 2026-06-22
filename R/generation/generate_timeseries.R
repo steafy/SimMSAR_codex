@@ -132,7 +132,8 @@ generate_timeseries <- function(Density,
     nodes = integer(dynamics_rows),
     regimes = integer(dynamics_rows),
     set_id = integer(dynamics_rows),
-    dynamics = vector("list", dynamics_rows)
+    dynamics = vector("list", dynamics_rows),
+    transmat = transmat = vector("list", dynamics_rows)
   )
 
   row_idx <- 0
@@ -167,7 +168,10 @@ generate_timeseries <- function(Density,
             }
             regime_dynamics[[paste0("Regime", m)]] <- W
           }
-
+          
+          # Generate transmat
+          transmat <- generate_transmat(M[l], remain_lower, remain_upper)
+          
           pb$tick()
 
           # Store in tibble
@@ -176,6 +180,7 @@ generate_timeseries <- function(Density,
           dynamics_tibble$regimes[row_idx] <- M[l]
           dynamics_tibble$set_id[row_idx] <- k
           dynamics_tibble$dynamics[[row_idx]] <- regime_dynamics
+          dynamics_tibble$transmat[[row_idx]] <- transmat 
         }
       }
     }
@@ -220,15 +225,11 @@ generate_timeseries <- function(Density,
             init <- runif(N[j], min = 0, max = 5)
 
             # Get dynamics for current timeseries from dynamics_tibble
-            dynamics <- dynamics_tibble %>%
+            dyn_row <- dynamics_tibble %>%
               filter(density == Density[i], nodes == N[j],
-                     regimes == M[k], set_id == l) %>%
-              pull(dynamics) %>%
-              .[[1]]
-
-            ## Generate TS from Transmat
-            # Generate transmat
-            transmat <- generate_transmat(M[k], remain_lower, remain_upper)
+                     regimes == M[k], set_id == l)
+            dynamics <- dyn_row$dynamics[[1]]
+            transmat <- dyn_row$transmat[[1]]
 
             # PERFORMANCE: Pre-allocate regime sequence vector
             # This avoids O(n²) vector copying when growing with c()
