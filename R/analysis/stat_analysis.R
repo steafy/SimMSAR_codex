@@ -51,11 +51,18 @@ MIN_EDG_VAL    <- 0.05   # edge-detection threshold; must match the generation i
 AC_HORIZON     <- 25     # T_ac for average_controllability(); MUST equal generation's default
 KAPPA_COND_MAX <- 1e6    # max condition number of est_Sigma before Kappa is flagged invalid
 
-# Outcome variables analysed throughout. Both AC correlation variants flow
-# through the full machinery (Fisher-z, LMMs, exports, plots) so they can be
-# compared on equal footing before deciding which to report.
-corr_cols <- c("Beta_corr", "Kappa_corr",
-               "Beta_ac_corr_pearson", "Beta_ac_corr_spearman")
+# Outcome variables analysed throughout. Decided (test run 2026-06): Pearson is
+# the primary AC-recovery outcome. Spearman AC correlation is computed in
+# compute_recovery_metrics() (column Beta_ac_corr_spearman stays available on
+# MSAR_dynamics_list/corr_results for ad-hoc robustness reporting) but is no
+# longer run through Fisher-z/LMM/exports/plots: at N=4 nodes Spearman's rho is
+# discretised onto a handful of values, so |rho|=1 occurs from discreteness
+# alone -- 18.1% of regime rows had |z|>5 vs. 1.5% for Pearson in the pilot run,
+# and R2_m was correspondingly worse (0.404 vs 0.560). Pearson AC correlation
+# now gets the same precision-weighting treatment as Kappa_corr (see
+# weight_BetaAC in transform.R / OUTCOME_WEIGHT_MAP in modeling.R), since it
+# inherits the analogous low-n artifact (n = Nodes instead of n_nz).
+corr_cols <- c("Beta_corr", "Kappa_corr", "Beta_ac_corr_pearson")
 
 # -----------------------------------------------------------------------------
 # PIPELINE

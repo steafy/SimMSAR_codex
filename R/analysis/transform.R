@@ -49,9 +49,16 @@ aggregate_to_sim_level <- function(corr_results, corr_cols) {
   # Weight = pmax(n_nz - 3, 1), the standard Fisher-z sampling-variance weight
   # (Var(z) ~ 1/(n-3)), floored at 1 so n_nz in {2,3,4} doesn't go <=0.
   # Alternative if more differentiation at small n_nz is wanted: weight = n_nz.
-  # Scoped deliberately to Beta_corr/Kappa_corr only (per discussion); AC has
-  # no analogous true-edge count and keeps the plain mean below.
-  weighted_outcomes <- c(Beta_corr = "weight_Beta", Kappa_corr = "weight_Kappa")
+  # Scoped to Beta_corr/Kappa_corr (per discussion).
+  #
+  # Beta_ac_corr_pearson has the analogous artifact, but with a different
+  # "n": it correlates the AC vector across Nodes (4/6/8), not across edges, so
+  # its precision weight uses Nodes instead of n_nz. Decided 2026-06 after the
+  # pilot run showed 1.5% |z|>5 for Pearson AC (vs. 18.1% for the now-dropped
+  # Spearman variant -- discreteness at N=4 makes rank correlation collapse
+  # onto a handful of values regardless of estimation quality).
+  weighted_outcomes <- c(Beta_corr = "weight_Beta", Kappa_corr = "weight_Kappa",
+                        Beta_ac_corr_pearson = "weight_BetaAC")
   weighted_z_cols   <- paste0(names(weighted_outcomes), "_z")
   
   # Convert factors to numeric for aggregation
@@ -61,27 +68,31 @@ aggregate_to_sim_level <- function(corr_results, corr_cols) {
       Density_num = as.numeric(as.character(Density)),
       Nodes_num = as.numeric(as.character(Nodes)),
       Regimes_num = as.numeric(as.character(Regimes)),
-      weight_Beta  = pmax(n_nz_Beta  - 3, 1),
-      weight_Kappa = pmax(n_nz_Kappa - 3, 1)
+      weight_Beta   = pmax(n_nz_Beta - 3, 1),
+      weight_Kappa  = pmax(n_nz_Kappa - 3, 1),
+      weight_BetaAC = pmax(Nodes_num - 3, 1)
     )
   
   # Aggregate: Mean across RegimeIndex for each SimUID
-  # CORRELATIONS: Aggregate on z-scale. Beta_corr_z/Kappa_corr_z use a
-  # precision-weighted mean; remaining z-outcomes (currently Beta_ac_corr_z)
-  # keep the original simple mean. w_Beta/w_Kappa (sum of per-regime weights;
-  # variances of independent estimates add when averaging) are carried
-  # forward as the `weights=` argument for fit_lmer() in modeling.R.
+  # CORRELATIONS: Aggregate on z-scale. Beta_corr_z/Kappa_corr_z/
+  # Beta_ac_corr_pearson_z use a precision-weighted mean; any remaining
+  # z-outcome not in weighted_outcomes keeps the original simple mean.
+  # w_Beta/w_Kappa/w_BetaAC (sum of per-regime weights; variances of
+  # independent estimates add when averaging) are carried forward as the
+  # `weights=` argument for fit_lmer() in modeling.R.
   plain_z_cols <- setdiff(z_cols, weighted_z_cols)
   
   dat_sim <- corr_results_for_agg %>%
     group_by(SimUID, Condition, SimID,
              Timesteps_num, Density_num, Nodes_num, Regimes_num) %>%
     summarise(
-      Beta_corr_z  = stats::weighted.mean(Beta_corr_z,  w = weight_Beta,  na.rm = TRUE),
-      Kappa_corr_z = stats::weighted.mean(Kappa_corr_z, w = weight_Kappa, na.rm = TRUE),
+      Beta_corr_z           = stats::weighted.mean(Beta_corr_z,           w = weight_Beta,   na.rm = TRUE),
+      Kappa_corr_z          = stats::weighted.mean(Kappa_corr_z,          w = weight_Kappa,  na.rm = TRUE),
+      Beta_ac_corr_pearson_z = stats::weighted.mean(Beta_ac_corr_pearson_z, w = weight_BetaAC, na.rm = TRUE),
       across(all_of(plain_z_cols), \(x) mean(x, na.rm = TRUE), .names = "{.col}"),
-      w_Beta  = sum(weight_Beta,  na.rm = TRUE),
-      w_Kappa = sum(weight_Kappa, na.rm = TRUE),
+      w_Beta   = sum(weight_Beta,   na.rm = TRUE),
+      w_Kappa  = sum(weight_Kappa,  na.rm = TRUE),
+      w_BetaAC = sum(weight_BetaAC, na.rm = TRUE),
       .groups = "drop"
     ) %>%
     rename(

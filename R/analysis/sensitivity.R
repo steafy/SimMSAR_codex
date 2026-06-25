@@ -4,13 +4,21 @@
 # Extracted from the former monolithic stat_analysis.R (PART 5.5).
 
 # Returns the sens_results list (or NULL if no analysis needed).
+#
+# Gating: runs whenever any condition has a failure rate > 10% (high_fail_
+# conditions, computed in report_selection_bias() regardless of whether the
+# omnibus Kruskal-Wallis test reached significance). Decided 2026-06: an
+# earlier version also required selection_bias_detected (i.e. a significant
+# KW test) before running, which meant a small/underpowered pilot run (low N,
+# few failures) could have a materially attrited cell -- e.g. 20% failure in
+# a single design cell -- and the sensitivity check would silently never run,
+# simply because the omnibus test lacked power to call it "significant". The
+# >10%-cell threshold alone is now sufficient, independent of significance.
 run_sensitivity_analysis <- function(dat_sim, all_results, corr_cols, bias) {
 
-  selection_bias_detected <- bias$selection_bias_detected
-  high_fail_conditions    <- bias$high_fail_conditions
+  high_fail_conditions <- bias$high_fail_conditions
 
-  if (selection_bias_detected &&
-      !is.null(high_fail_conditions) && nrow(high_fail_conditions) > 0) {
+  if (!is.null(high_fail_conditions) && nrow(high_fail_conditions) > 0) {
 
     cat("\n=== SENSITIVITY ANALYSIS: Excluding high-failure conditions (>10%) ===\n\n")
     cat("Excluded conditions:\n")
@@ -60,7 +68,8 @@ run_sensitivity_analysis <- function(dat_sim, all_results, corr_cols, bias) {
 
       # Use the same precision weights as the primary model (OUTCOME_WEIGHT_MAP
       # is defined in modeling.R) so Full vs. Sensitivity stays an apples-to-
-      # apples comparison; NULL (unweighted) for outcomes like Beta_ac_corr.
+      # apples comparison; NULL (unweighted) for outcomes not in the map
+      # (currently only Beta_corr).
       weight_col <- if (outcome %in% names(OUTCOME_WEIGHT_MAP)) OUTCOME_WEIGHT_MAP[[outcome]] else NULL
       # Normalized to mean 1 -- see modeling.R::fit_outcome_models() for why
       # (avoids inflating residual variance / destabilizing the optimizer).
@@ -106,7 +115,7 @@ run_sensitivity_analysis <- function(dat_sim, all_results, corr_cols, bias) {
     sens_results
 
   } else {
-    cat("\nNo sensitivity analysis needed (no high-failure conditions or no bias detected).\n\n")
+    cat("\nNo sensitivity analysis needed (no condition exceeded the 10% failure-rate threshold).\n\n")
     NULL
   }
 }

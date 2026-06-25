@@ -13,10 +13,15 @@
 # -----------------------------------------------------------------------------
 # Precision-weighting lookup (single source of truth for modeling.R AND
 # sensitivity.R): which outcome uses which sim-level weight column from
-# aggregate_to_sim_level(). Outcomes not listed here (e.g. Beta_ac_corr, which
-# has no analogous true-edge count) are fit unweighted.
+# aggregate_to_sim_level(). Kappa_corr is weighted by true non-zero edge count
+# (n_nz); Beta_ac_corr_pearson by Nodes (the analogous "n" for a correlation
+# computed across nodes rather than edges) -- both correlations are mechanically
+# pulled toward |r|=1 at low n, regardless of estimation quality. Beta_corr is
+# NOT weighted (see transform.R: the full N x N matrix gives it enough degrees
+# of freedom that this artifact doesn't bite). Outcomes not listed here are fit
+# unweighted.
 # -----------------------------------------------------------------------------
-OUTCOME_WEIGHT_MAP <- c(Kappa_corr = "w_Kappa")
+OUTCOME_WEIGHT_MAP <- c(Kappa_corr = "w_Kappa", Beta_ac_corr_pearson = "w_BetaAC")
 
 # -----------------------------------------------------------------------------
 # Helpers (remove the triplicated formula construction / fitting boilerplate)
@@ -264,7 +269,7 @@ fit_outcome_models <- function(outcome, dat_sim, weight_col = NULL) {
     primary_model   <- model_2way
     primary_label   <- "2-Way (primary)"
     secondary_label <- "3-Way (comparison)"
-    cat(sprintf("\n→ 2-Way model selected as primary (ΔAIC = %.1f, below threshold of 10)\n",
+    cat(sprintf("\n→ 2-Way model selected as primary (ΔAIC[3way-2way] = %.1f; 3-way improves AIC by less than the 10-point threshold, so the simpler model is kept)\n",
                 delta_aic_3way))
   }
 
