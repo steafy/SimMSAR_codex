@@ -133,7 +133,7 @@ generate_timeseries <- function(Density,
     regimes = integer(dynamics_rows),
     set_id = integer(dynamics_rows),
     dynamics = vector("list", dynamics_rows),
-    transmat = transmat = vector("list", dynamics_rows)
+    transmat = vector("list", dynamics_rows)
   )
 
   row_idx <- 0

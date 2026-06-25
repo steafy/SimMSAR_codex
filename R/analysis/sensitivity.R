@@ -58,8 +58,20 @@ run_sensitivity_analysis <- function(dat_sim, all_results, corr_cols, bias) {
         )
       }
 
+      # Use the same precision weights as the primary model (OUTCOME_WEIGHT_MAP
+      # is defined in modeling.R) so Full vs. Sensitivity stays an apples-to-
+      # apples comparison; NULL (unweighted) for outcomes like Beta_ac_corr.
+      weight_col <- if (outcome %in% names(OUTCOME_WEIGHT_MAP)) OUTCOME_WEIGHT_MAP[[outcome]] else NULL
+      # Normalized to mean 1 -- see modeling.R::fit_outcome_models() for why
+      # (avoids inflating residual variance / destabilizing the optimizer).
+      w_sens <- if (!is.null(weight_col)) {
+        dat_sim_sens[[weight_col]] / mean(dat_sim_sens[[weight_col]])
+      } else {
+        NULL
+      }
+
       model_sens <- tryCatch(
-        lmer(sens_formula, data = dat_sim_sens, REML = FALSE,
+        lmer(sens_formula, data = dat_sim_sens, weights = w_sens, REML = FALSE,
              control = lmerControl(optimizer = "bobyqa")),
         error = function(e) { cat("  Sensitivity model failed for", outcome, ":", e$message, "\n"); NULL }
       )

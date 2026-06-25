@@ -32,10 +32,10 @@ Density <- c(0.25, 0.5, 0.75)   # Network edge density (proportion of possible e
 M <- c(1, 2, 3, 4)               # Number of regimes (network states)
                               # Can be a vector: c(2, 3, 4)
 
-remain_lower <- 0.33          # Lower bound for probability to stay in same regime
+remain_lower <- 0.85          # Lower bound for probability to stay in same regime
                               # Range: 0 to 1 (higher = more stable regimes)
 
-remain_upper <- 0.66          # Upper bound for probability to stay in same regime
+remain_upper <- 0.85          # Upper bound for probability to stay in same regime
                               # Range: remain_lower to 1
 
 # -----------------------------------------------------------------------------
@@ -95,7 +95,7 @@ if (save_output && !dir.exists(output_dir)) {
 # IMPORTANT: This must be set BEFORE generate_timeseries() is called
 # All random operations (network generation, time series simulation,
 # model initialization) will be reproducible with this single seed
-set.seed(83742)
+set.seed(37593)
 
 # =============================================================================
 # PARAMETER SUMMARY

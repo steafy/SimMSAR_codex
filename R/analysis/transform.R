@@ -9,7 +9,7 @@
 # Adds <outcome>_z columns to corr_results and warns about extreme z-values.
 add_fisher_z <- function(corr_results, corr_cols) {
   eps <- 1e-6
-
+  
   for (cc in corr_cols) {
     r <- corr_results[[cc]]
     # Clip extreme values to avoid Inf/-Inf
@@ -17,7 +17,7 @@ add_fisher_z <- function(corr_results, corr_cols) {
     # Fisher-z transformation: z = atanh(r)
     corr_results[[paste0(cc, "_z")]] <- atanh(r)
   }
-
+  
   # Check for extreme values
   z_cols <- paste0(corr_cols, "_z")
   for (zc in z_cols) {
@@ -30,7 +30,7 @@ add_fisher_z <- function(corr_results, corr_cols) {
       cat("  ⚠", zc, "has", n_na, "NA values\n")
     }
   }
-
+  
   corr_results
 }
 
@@ -40,25 +40,48 @@ add_fisher_z <- function(corr_results, corr_cols) {
 # Correlations aggregated on the z-scale; other metrics on the original scale.
 # Returns list(dat_sim, available_other_metrics, z_cols).
 aggregate_to_sim_level <- function(corr_results, corr_cols) {
-
+  
   z_cols <- paste0(corr_cols, "_z")
-
+  
+  # Precision-weighting: outcomes computed from very few TRUE non-zero edges
+  # (n_nz_Beta / n_nz_Kappa, added in prepare_corr_results()) have a Pearson r
+  # that is mechanically forced toward |r|=1, regardless of estimation quality.
+  # Weight = pmax(n_nz - 3, 1), the standard Fisher-z sampling-variance weight
+  # (Var(z) ~ 1/(n-3)), floored at 1 so n_nz in {2,3,4} doesn't go <=0.
+  # Alternative if more differentiation at small n_nz is wanted: weight = n_nz.
+  # Scoped deliberately to Beta_corr/Kappa_corr only (per discussion); AC has
+  # no analogous true-edge count and keeps the plain mean below.
+  weighted_outcomes <- c(Beta_corr = "weight_Beta", Kappa_corr = "weight_Kappa")
+  weighted_z_cols   <- paste0(names(weighted_outcomes), "_z")
+  
   # Convert factors to numeric for aggregation
   corr_results_for_agg <- corr_results %>%
     mutate(
       Timesteps_num = as.numeric(as.character(Timesteps)),
       Density_num = as.numeric(as.character(Density)),
       Nodes_num = as.numeric(as.character(Nodes)),
-      Regimes_num = as.numeric(as.character(Regimes))
+      Regimes_num = as.numeric(as.character(Regimes)),
+      weight_Beta  = pmax(n_nz_Beta  - 3, 1),
+      weight_Kappa = pmax(n_nz_Kappa - 3, 1)
     )
-
+  
   # Aggregate: Mean across RegimeIndex for each SimUID
-  # CORRELATIONS: Aggregate on z-scale
+  # CORRELATIONS: Aggregate on z-scale. Beta_corr_z/Kappa_corr_z use a
+  # precision-weighted mean; remaining z-outcomes (currently Beta_ac_corr_z)
+  # keep the original simple mean. w_Beta/w_Kappa (sum of per-regime weights;
+  # variances of independent estimates add when averaging) are carried
+  # forward as the `weights=` argument for fit_lmer() in modeling.R.
+  plain_z_cols <- setdiff(z_cols, weighted_z_cols)
+  
   dat_sim <- corr_results_for_agg %>%
     group_by(SimUID, Condition, SimID,
              Timesteps_num, Density_num, Nodes_num, Regimes_num) %>%
     summarise(
-      across(all_of(z_cols), \(x) mean(x, na.rm = TRUE), .names = "{.col}"),
+      Beta_corr_z  = stats::weighted.mean(Beta_corr_z,  w = weight_Beta,  na.rm = TRUE),
+      Kappa_corr_z = stats::weighted.mean(Kappa_corr_z, w = weight_Kappa, na.rm = TRUE),
+      across(all_of(plain_z_cols), \(x) mean(x, na.rm = TRUE), .names = "{.col}"),
+      w_Beta  = sum(weight_Beta,  na.rm = TRUE),
+      w_Kappa = sum(weight_Kappa, na.rm = TRUE),
       .groups = "drop"
     ) %>%
     rename(
@@ -67,17 +90,17 @@ aggregate_to_sim_level <- function(corr_results, corr_cols) {
       Nodes = Nodes_num,
       Regimes_fac = Regimes_num
     )
-
+  
   # OTHER METRICS: Aggregate on original scale
-  other_metrics <- c("MAE_Beta", "MAE_Kappa",
+  other_metrics <- c("NRMSE_Beta", "NRMSE_Kappa",
                      "Beta_sen", "Kappa_sen",
                      "Beta_spec", "Kappa_spec")
-
+  
   available_other_metrics <- other_metrics[other_metrics %in% names(corr_results_for_agg)]
-
+  
   if (length(available_other_metrics) > 0) {
     cat("  Aggregating other metrics:", paste(available_other_metrics, collapse = ", "), "\n")
-
+    
     dat_sim_other <- corr_results_for_agg %>%
       group_by(SimUID, Condition, SimID,
                Timesteps_num, Density_num, Nodes_num, Regimes_num) %>%
@@ -86,26 +109,26 @@ aggregate_to_sim_level <- function(corr_results, corr_cols) {
         .groups = "drop"
       ) %>%
       select(SimUID, all_of(available_other_metrics))
-
+    
     # Merge with dat_sim
     dat_sim <- dat_sim %>%
       left_join(dat_sim_other, by = "SimUID")
   }
-
+  
   # Check: weighting problems solved?
   original_regime_dist <- table(corr_results_for_agg$Regimes_num)
   cat("Original distribution (row-level):\n")
   print(original_regime_dist)
   cat("\nPercentages:\n")
   print(round(100 * original_regime_dist / sum(original_regime_dist), 1))
-
+  
   sim_regime_dist <- table(dat_sim$Regimes_fac)
   cat("\nAggregated distribution (simulation-level):\n")
   print(sim_regime_dist)
   cat("\nPercentages:\n")
   print(round(100 * sim_regime_dist / sum(sim_regime_dist), 1))
   cat("\n")
-
+  
   list(
     dat_sim                 = dat_sim,
     available_other_metrics = available_other_metrics,
@@ -117,25 +140,25 @@ aggregate_to_sim_level <- function(corr_results, corr_cols) {
 # PART 4: Transform & scale predictors; attach condition-level success rates
 # -----------------------------------------------------------------------------
 scale_predictors <- function(dat_sim, selection_weights) {
-
+  
   dat_sim <- dat_sim %>%
     mutate(
       # log(Timesteps) for diminishing returns
       logT = as.numeric(scale(log(Timesteps))),
-
+      
       # Density and Nodes: centered and scaled
       Density_s = as.numeric(scale(Density)),
       Nodes_s = as.numeric(scale(Nodes)),
-
+      
       # Regimes as FACTOR (not scaled!)
       Regimes = factor(Regimes_fac),
-
+      
       # Create network_id: unique identifier for each network (same network measured at different T)
       # NOTE: Does NOT include Timesteps because same network is used across T values
       network_id = interaction(Density, Nodes, Regimes, SimID, drop = TRUE)
     ) %>%
     select(-Regimes_fac)  # Remove temporary variable
-
+  
   # Attach condition-level success rates to each retained simulation row.
   dat_sim <- dat_sim %>%
     mutate(
@@ -152,6 +175,6 @@ scale_predictors <- function(dat_sim, selection_weights) {
       success_rate = ifelse(is.na(success_rate), 1, success_rate)
     ) %>%
     select(-Timesteps_chr, -Density_chr, -Nodes_chr, -Regimes_chr)
-
+  
   dat_sim
 }

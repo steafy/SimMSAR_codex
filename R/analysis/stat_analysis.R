@@ -14,7 +14,6 @@
 # 2. If yes, checks for boundary singularity in the correlated RE model
 # 3. If singular (rho ~ 1.0), uses uncorrelated RE to ensure stability
 # 4. Otherwise, uses correlated RE (best fit)
-# This outcome-specific approach follows standard practice (Bates et al., 2015).
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -33,22 +32,44 @@ for (pkg in required_packages) {
 # -----------------------------------------------------------------------------
 # Load analysis modules
 # -----------------------------------------------------------------------------
-source("R/analysis/data_prep.R")      # PART 1: data prep + selection-bias reporting
+source("R/analysis/data_prep.R")      # PART 1: scoring, data prep + selection-bias reporting
 source("R/analysis/feasibility.R")    # PART 1.4: feasibility (convergence) model
 source("R/analysis/transform.R")      # PART 2-4: Fisher-z, aggregation, scaling
 source("R/analysis/descriptives.R")   # PART 3.1: descriptive statistics
 source("R/analysis/modeling.R")       # PART 5: mixed-effects model fitting
 source("R/analysis/sensitivity.R")    # PART 5.5: sensitivity analysis
+source("R/analysis/sequence_models.R")# PART 5.6: RQ4 regime-sequence recovery LMM
 source("R/analysis/exports.R")        # PART 6: coefficient/comparison tables, diagnostics
 source("R/analysis/plots.R")          # PART 7-8: line, sens/spec, coefficient plots
 source("R/analysis/reporting.R")      # FINAL: model-quality summary
 
-# Outcome variables analysed throughout
-corr_cols <- c("Beta_corr", "Kappa_corr", "Beta_ac_corr")
+options(warn = 1)
+
+# Scoring constants (now that metrics are computed in analysis, not estimation).
+# These are the revisable scoring decisions the refactor was about:
+MIN_EDG_VAL    <- 0.05   # edge-detection threshold; must match the generation intent
+AC_HORIZON     <- 25     # T_ac for average_controllability(); MUST equal generation's default
+KAPPA_COND_MAX <- 1e6    # max condition number of est_Sigma before Kappa is flagged invalid
+
+# Outcome variables analysed throughout. Both AC correlation variants flow
+# through the full machinery (Fisher-z, LMMs, exports, plots) so they can be
+# compared on equal footing before deciding which to report.
+corr_cols <- c("Beta_corr", "Kappa_corr",
+               "Beta_ac_corr_pearson", "Beta_ac_corr_spearman")
 
 # -----------------------------------------------------------------------------
 # PIPELINE
 # -----------------------------------------------------------------------------
+
+# PART 1.0: Score the raw estimates -- edge threshold, Kappa = solve(Sigma) +
+# condition-number validity gate, correlations, sens/spec, NRMSE, AC corrs.
+MSAR_dynamics_list <- compute_recovery_metrics(
+  MSAR_dynamics_list,
+  min_edg_val    = MIN_EDG_VAL,
+  AC_HORIZON     = AC_HORIZON,
+  KAPPA_COND_MAX = KAPPA_COND_MAX
+)
+sigma_validity <- summarize_sigma_validity(MSAR_dynamics_list)
 
 # PART 1: Data preparation and estimation-process / selection-bias analysis
 corr_results <- prepare_corr_results(MSAR_dynamics_list)
@@ -78,6 +99,10 @@ all_results <- fit_all_models(dat_sim, corr_cols)
 
 # PART 5.5: Sensitivity analysis
 sens_results <- run_sensitivity_analysis(dat_sim, all_results, corr_cols, bias)
+
+# PART 5.6: RQ4 -- regime-sequence recovery LMM (Cohen's kappa), from the
+# fit-level table attached by estimate_MSAR().
+seq_recovery <- fit_sequence_recovery_model(attr(MSAR_dynamics_list, "fit_results"))
 
 # PART 6: Export results
 export_coefficient_tables(all_results, corr_cols)

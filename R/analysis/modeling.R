@@ -11,6 +11,14 @@
 # 4. Otherwise, uses correlated RE (best fit)
 
 # -----------------------------------------------------------------------------
+# Precision-weighting lookup (single source of truth for modeling.R AND
+# sensitivity.R): which outcome uses which sim-level weight column from
+# aggregate_to_sim_level(). Outcomes not listed here (e.g. Beta_ac_corr, which
+# has no analogous true-edge count) are fit unweighted.
+# -----------------------------------------------------------------------------
+OUTCOME_WEIGHT_MAP <- c(Kappa_corr = "w_Kappa")
+
+# -----------------------------------------------------------------------------
 # Helpers (remove the triplicated formula construction / fitting boilerplate)
 # -----------------------------------------------------------------------------
 
@@ -25,19 +33,32 @@ build_formula <- function(outcome_z, term, re_formula) {
   as.formula(paste0(fixed, " + ", re_formula))
 }
 
-fit_lmer <- function(formula, data) {
-  lmer(formula, data = data, REML = FALSE,
+fit_lmer <- function(formula, data, weights = NULL) {
+  lmer(formula, data = data, weights = weights, REML = FALSE,
        control = lmerControl(optimizer = "bobyqa"))
 }
 
 # -----------------------------------------------------------------------------
 # Fit all three models for a single outcome and return the results entry.
 # -----------------------------------------------------------------------------
-fit_outcome_models <- function(outcome, dat_sim) {
+fit_outcome_models <- function(outcome, dat_sim, weight_col = NULL) {
 
   outcome_z <- paste0(outcome, "_z")
 
+  # Precision weights (see aggregate_to_sim_level()): NULL for outcomes
+  # without an analogous true-edge count (e.g. Beta_ac_corr), in which case
+  # fit_lmer()'s weights=NULL default reproduces the original unweighted fit.
+  # Normalized to mean 1: lmer's fixed-effect estimates are invariant to a
+  # global rescaling of weights, but the residual-variance scale (and hence
+  # ICC, R2_nakagawa) is NOT -- raw w_Beta/w_Kappa run into the hundreds for
+  # some rows, which inflated residual variance ~30x and likely destabilized
+  # the optimizer (observed: "negative eigenvalue" convergence warning).
+  w <- if (!is.null(weight_col)) dat_sim[[weight_col]] / mean(dat_sim[[weight_col]]) else NULL
+
   cat("Fitting models for:", outcome, "\n")
+  if (!is.null(weight_col)) {
+    cat("  (precision-weighted by", weight_col, ")\n")
+  }
   cat(strrep("-", 60), "\n")
 
   # 5.0: Test random slopes for logT
@@ -45,11 +66,11 @@ fit_outcome_models <- function(outcome, dat_sim) {
   cat("Testing random-effects structure...\n")
 
   # Model with random intercept only
-  model_ri <- fit_lmer(build_formula(outcome_z, "main", "(1|network_id)"), dat_sim)
+  model_ri <- fit_lmer(build_formula(outcome_z, "main", "(1|network_id)"), dat_sim, weights = w)
 
   # Model with random intercept + random slope for logT (correlated)
   model_rs_corr <- tryCatch({
-    fit_lmer(build_formula(outcome_z, "main", "(1 + logT|network_id)"), dat_sim)
+    fit_lmer(build_formula(outcome_z, "main", "(1 + logT|network_id)"), dat_sim, weights = w)
   }, error = function(e) {
     cat("  Random slopes (correlated) model failed to converge\n")
     return(NULL)
@@ -58,7 +79,7 @@ fit_outcome_models <- function(outcome, dat_sim) {
   # Model with random intercept + random slope for logT (uncorrelated)
   model_rs_uncorr <- tryCatch({
     fit_lmer(build_formula(outcome_z, "main",
-                           "(1|network_id) + (0 + logT|network_id)"), dat_sim)
+                           "(1|network_id) + (0 + logT|network_id)"), dat_sim, weights = w)
   }, error = function(e) {
     cat("  Random slopes (uncorrelated) model failed to converge\n")
     return(NULL)
@@ -127,10 +148,10 @@ fit_outcome_models <- function(outcome, dat_sim) {
   }
 
   # 5.1: Main effects model (baseline)
-  model_main <- fit_lmer(build_formula(outcome_z, "main", re_formula), dat_sim)
+  model_main <- fit_lmer(build_formula(outcome_z, "main", re_formula), dat_sim, weights = w)
 
   # 5.2: 2-way interactions (PRIMARY MODEL)
-  model_2way <- fit_lmer(build_formula(outcome_z, "2way", re_formula), dat_sim)
+  model_2way <- fit_lmer(build_formula(outcome_z, "2way", re_formula), dat_sim, weights = w)
 
   # 5.2.1: CHECK FOR SINGULARITY IN 2-WAY MODEL AND REFIT IF NEEDED
   # The 2-way model may be singular even if the main effects test was not
@@ -144,15 +165,15 @@ fit_outcome_models <- function(outcome, dat_sim) {
     re_formula <- "(1|network_id) + (0 + logT|network_id)"
 
     # Refit main effects + 2-way models
-    model_main <- fit_lmer(build_formula(outcome_z, "main", re_formula), dat_sim)
-    model_2way <- fit_lmer(build_formula(outcome_z, "2way", re_formula), dat_sim)
+    model_main <- fit_lmer(build_formula(outcome_z, "main", re_formula), dat_sim, weights = w)
+    model_2way <- fit_lmer(build_formula(outcome_z, "2way", re_formula), dat_sim, weights = w)
 
     cat("  ✓ Models refitted with uncorrelated random effects\n")
     cat(sprintf("  New formula: %s\n\n", re_formula))
   }
 
   # 5.3: 3-way interactions
-  model_3way <- fit_lmer(build_formula(outcome_z, "3way", re_formula), dat_sim)
+  model_3way <- fit_lmer(build_formula(outcome_z, "3way", re_formula), dat_sim, weights = w)
 
   # 5.3.1: CHECK FOR SINGULARITY IN 3-WAY MODEL AND REFIT IF NEEDED
   if (use_random_slopes && !use_uncorrelated && isSingular(model_3way)) {
@@ -162,9 +183,9 @@ fit_outcome_models <- function(outcome, dat_sim) {
     use_uncorrelated <- TRUE
     re_formula <- "(1|network_id) + (0 + logT|network_id)"
 
-    model_main <- fit_lmer(build_formula(outcome_z, "main", re_formula), dat_sim)
-    model_2way <- fit_lmer(build_formula(outcome_z, "2way", re_formula), dat_sim)
-    model_3way <- fit_lmer(build_formula(outcome_z, "3way", re_formula), dat_sim)
+    model_main <- fit_lmer(build_formula(outcome_z, "main", re_formula), dat_sim, weights = w)
+    model_2way <- fit_lmer(build_formula(outcome_z, "2way", re_formula), dat_sim, weights = w)
+    model_3way <- fit_lmer(build_formula(outcome_z, "3way", re_formula), dat_sim, weights = w)
 
     cat("  ✓ All models refitted with uncorrelated random effects\n")
     cat(sprintf("  New formula: %s\n\n", re_formula))
@@ -313,7 +334,8 @@ fit_all_models <- function(dat_sim, corr_cols) {
 
   all_results <- list()
   for (outcome in corr_cols) {
-    all_results[[outcome]] <- fit_outcome_models(outcome, dat_sim)
+    weight_col <- if (outcome %in% names(OUTCOME_WEIGHT_MAP)) OUTCOME_WEIGHT_MAP[[outcome]] else NULL
+    all_results[[outcome]] <- fit_outcome_models(outcome, dat_sim, weight_col = weight_col)
   }
   all_results
 }

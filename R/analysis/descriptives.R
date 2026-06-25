@@ -5,7 +5,7 @@
 
 # Returns list(table = descriptive_stats_table) and writes HTML/LaTeX tables.
 descriptive_stats <- function(dat_sim, corr_cols, available_other_metrics) {
-
+  
   descriptive_stats_table <- data.frame(
     Metric = character(),
     Mean = numeric(),
@@ -18,15 +18,15 @@ descriptive_stats <- function(dat_sim, corr_cols, available_other_metrics) {
     N = integer(),
     stringsAsFactors = FALSE
   )
-
+  
   # 1. CORRELATIONS: Back-transform from z-scale
   for (outcome in corr_cols) {
     outcome_z <- paste0(outcome, "_z")
-
+    
     if (outcome_z %in% names(dat_sim)) {
       # Back-transform z-values to r-scale
       r_values <- tanh(dat_sim[[outcome_z]])
-
+      
       descriptive_stats_table <- rbind(
         descriptive_stats_table,
         data.frame(
@@ -44,12 +44,12 @@ descriptive_stats <- function(dat_sim, corr_cols, available_other_metrics) {
       )
     }
   }
-
+  
   # 2. OTHER METRICS: Already aggregated on original scale
   for (metric in available_other_metrics) {
     if (metric %in% names(dat_sim)) {
       values <- dat_sim[[metric]]
-
+      
       descriptive_stats_table <- rbind(
         descriptive_stats_table,
         data.frame(
@@ -67,39 +67,39 @@ descriptive_stats <- function(dat_sim, corr_cols, available_other_metrics) {
       )
     }
   }
-
+  
   # Order rows by outcome block (not by metric type): first the temporal
   # network Beta (correlation, MAE, sensitivity, specificity), then the average
   # controllability of Beta, then the contemporaneous network Kappa. Metrics not
   # listed keep their original order at the end.
   metric_order <- c(
-    "Beta_corr", "MAE_Beta", "Beta_sen", "Beta_spec",   # Beta block
-    "Beta_ac_corr",                                       # AC(Beta) block
-    "Kappa_corr", "MAE_Kappa", "Kappa_sen", "Kappa_spec"  # Kappa block
+    "Beta_corr", "NRMSE_Beta", "Beta_sen", "Beta_spec",   # Beta block
+    "Beta_ac_corr_pearson", "Beta_ac_corr_spearman",      # AC(Beta) block (both variants)
+    "Kappa_corr", "NRMSE_Kappa", "Kappa_sen", "Kappa_spec"  # Kappa block
   )
   descriptive_stats_table <- descriptive_stats_table[
     order(match(descriptive_stats_table$Metric, metric_order)), , drop = FALSE
   ]
   rownames(descriptive_stats_table) <- NULL
-
+  
   cat("\n=== DESCRIPTIVE STATISTICS (Simulation-Level, z-aggregated) ===\n\n")
   print(descriptive_stats_table, digits = 2, row.names = FALSE)
   cat("\n")
-
+  
   cat("Note: Correlation metrics aggregated on Fisher-z scale (consistent with\n")
   cat("      regression analysis), then back-transformed to r-scale. Other metrics\n")
   cat("      aggregated on original scale. All aggregation at simulation level.\n\n")
-
+  
   # Create formatted tables
   if (require("kableExtra", quietly = TRUE)) {
-
+    
     # Keep N (the number of non-NA observations that actually entered each
     # metric) in the exported table -- with the Kappa condition-number guard,
     # this now differs across metrics (Kappa metrics have fewer valid obs).
     descriptive_stats_formatted <- descriptive_stats_table %>%
       select(Metric, Mean, TrimMean, SD, Median, Min, Max, Range, N) %>%
       mutate(across(c(Mean, TrimMean, SD, Median, Min, Max, Range), ~round(., 3)))
-
+    
     # HTML table
     descriptive_stats_formatted %>%
       kable(caption = "Descriptive Statistics (Simulation-Level, z-aggregated)",
@@ -107,19 +107,20 @@ descriptive_stats <- function(dat_sim, corr_cols, available_other_metrics) {
             align = c("l", rep("r", 8))) %>%
       kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
       save_kable(file = "descriptive_statistics_table.html")
-
+    
     # LaTeX table: map the Metric column to math labels (subscript-per-row).
-    # Recovery correlations use r_<network>; MAE/Sensitivity/Specificity carry
-    # the network as a subscript. Applied only to the .tex export so console and
-    # HTML keep the readable raw names. Requires \usepackage{amsmath} for \text.
+    # Recovery correlations use r_<network>; NRMSE/Sensitivity/Specificity
+    # carry the network as a subscript. Applied only to the .tex export so
+    # console and HTML keep the readable raw names. Requires \usepackage{amsmath}.
     tex_metric_labels <- c(
       Beta_corr    = "$r_{\\text{Beta}}$",
-      MAE_Beta     = "$\\text{MAE}_{\\text{Beta}}$",
+      NRMSE_Beta   = "$\\text{NRMSE}_{\\text{Beta}}$",
       Beta_sen     = "$\\text{Sens}_{\\text{Beta}}$",
       Beta_spec    = "$\\text{Spec}_{\\text{Beta}}$",
-      Beta_ac_corr = "$r_{\\text{AC}}$",
+      Beta_ac_corr_pearson  = "$r_{\\text{AC, Pearson}}$",
+      Beta_ac_corr_spearman = "$r_{\\text{AC, Spearman}}$",
       Kappa_corr   = "$r_{\\text{Kappa}}$",
-      MAE_Kappa    = "$\\text{MAE}_{\\text{Kappa}}$",
+      NRMSE_Kappa  = "$\\text{NRMSE}_{\\text{Kappa}}$",
       Kappa_sen    = "$\\text{Sens}_{\\text{Kappa}}$",
       Kappa_spec   = "$\\text{Spec}_{\\text{Kappa}}$"
     )
@@ -127,7 +128,7 @@ descriptive_stats <- function(dat_sim, corr_cols, available_other_metrics) {
     mapped <- tex_metric_labels[descriptive_stats_tex$Metric]
     descriptive_stats_tex$Metric <- ifelse(is.na(mapped),
                                            descriptive_stats_tex$Metric, mapped)
-
+    
     # N shown as integer via per-column digits; sanitize.* = identity so the
     # LaTeX math in the Metric column is written verbatim (not escaped).
     print(
@@ -139,7 +140,7 @@ descriptive_stats <- function(dat_sim, corr_cols, available_other_metrics) {
       sanitize.text.function = identity
     )
   }
-
+  
   # Store for later use
   list(table = descriptive_stats_table)
 }

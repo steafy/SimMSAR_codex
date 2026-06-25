@@ -14,7 +14,8 @@ make_line_plots <- function(corr_results, cols) {
       col_name,
       "Beta_corr"       = "Mean correlations for Beta",
       "Kappa_corr"      = "Mean correlations for Kappa",
-      "Beta_ac_corr"    = "Mean correlations for Beta average controllability"
+      "Beta_ac_corr_pearson"  = "Mean correlations for Beta AC (Pearson)",
+      "Beta_ac_corr_spearman" = "Mean correlations for Beta AC (Spearman)"
     )
 
     # Summarize data
@@ -219,7 +220,8 @@ make_coefficient_plots <- function(all_results, corr_cols) {
   outcome_labels <- c(
     Beta_corr     = "Beta (Correlation)",
     Kappa_corr    = "Kappa (Correlation)",
-    Beta_ac_corr  = "Beta (Avg. Controllability)"
+    Beta_ac_corr_pearson  = "Beta AC (Pearson)",
+    Beta_ac_corr_spearman = "Beta AC (Spearman)"
   )
 
   # Collect coefficients + CIs from all primary models

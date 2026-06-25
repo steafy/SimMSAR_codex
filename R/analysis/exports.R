@@ -87,7 +87,8 @@ export_comparison_table <- function(all_results, corr_cols) {
   outcome_tex_labels <- c(
     Beta_corr     = "$r_{\\text{Beta}}$",
     Kappa_corr    = "$r_{\\text{Kappa}}$",
-    Beta_ac_corr  = "$r_{\\text{AC}}$"
+    Beta_ac_corr_pearson  = "$r_{\\text{AC, Pearson}}$",
+    Beta_ac_corr_spearman = "$r_{\\text{AC, Spearman}}$"
   )
 
   # Human-readable random-effects structure labels
