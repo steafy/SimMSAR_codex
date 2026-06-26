@@ -75,6 +75,11 @@ eps <- 1e-5                   # Convergence criterion (epsilon)
 retry_attempts <- 5           # Number of retry attempts if fitting fails
 
 # -----------------------------------------------------------------------------
+# Parallelisierung
+# -----------------------------------------------------------------------------
+workers <- 5   # NULL = automatisch (physische Kerne - 1); explizit z.B. workers <- 5
+
+# -----------------------------------------------------------------------------
 # Output Parameters
 # -----------------------------------------------------------------------------
 verbose <- FALSE              # Print detailed progress messages
@@ -166,7 +171,8 @@ Timeseries_data <- generate_timeseries(
   totTime = totTime,
   n_ts = n_ts,
   remain_lower = remain_lower,
-  remain_upper = remain_upper
+  remain_upper = remain_upper,
+  workers = workers
   )
 
 cat("Data generation complete!\n\n")
@@ -186,7 +192,8 @@ MSAR_dynamics_list <- estimate_MSAR(
   MaxIter = MaxIter,
   verbose = verbose,
   min_edg_val = min_edg_val,
-  Timeseries_data = Timeseries_data
+  Timeseries_data = Timeseries_data,
+  workers = workers
 )
 
 cat("Model estimation complete!\n\n")
