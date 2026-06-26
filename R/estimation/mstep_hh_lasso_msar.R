@@ -142,13 +142,20 @@ function(data,theta,FB,verbose = FALSE)  {
         }
         else {
           mylm[[kst]] = lm(wy[,id,j]~wx[,w[[kst]],j])
+          # BUGFIX (inherited from NHMSAR::Mstep.hh.lasso.MSAR): the BIC for
+          # lambda selection must score regime j's own response (wy[,id,j], not
+          # the hardcoded regime-1 wy[,id,1]) over its actual length
+          # (length(wy[,id,j]) = N.samples*(T-1), not length(wy) = that * d * M,
+          # which recycled the data ~d*M-fold and inflated the log-likelihood
+          # term relative to the penalty, disabling model selection).
+          n_obs = length(wy[,id,j])
           BIC.lm[kst] = -2*sum(log(
             NHMSAR:::pdf.norm(
-              matrix(c(wy[,id,1]),1,length(wy)),
-              matrix(c(mylm[[kst]]$fitted.values),1,length(wy)),
+              matrix(c(wy[,id,j]),1,n_obs),
+              matrix(c(mylm[[kst]]$fitted.values),1,n_obs),
               as.matrix(var(wy[,id,j]-mylm[[kst]]$fitted.values)))
-            )) 
-            + log(length(wy))*(length(w[[kst]])+2)
+            ))
+            + log(n_obs)*(length(w[[kst]])+2)
         }
       }
       
