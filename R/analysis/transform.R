@@ -4,18 +4,22 @@
 # Functions extracted from the former monolithic stat_analysis.R (PARTs 2-4).
 
 # -----------------------------------------------------------------------------
+# Shared helper: eps-clipped Fisher-z (atanh), used by both add_fisher_z() and
+# aggregate_to_sim_level() so the clipping threshold has one source of truth.
+# -----------------------------------------------------------------------------
+safe_atanh <- function(r, eps = 1e-6) {
+  atanh(pmin(pmax(r, -1 + eps), 1 - eps))
+}
+
+# -----------------------------------------------------------------------------
 # PART 2: Fisher-z transformation of correlation outcomes
 # -----------------------------------------------------------------------------
 # Adds <outcome>_z columns to corr_results and warns about extreme z-values.
 add_fisher_z <- function(corr_results, corr_cols) {
-  eps <- 1e-6
-  
+
   for (cc in corr_cols) {
-    r <- corr_results[[cc]]
-    # Clip extreme values to avoid Inf/-Inf
-    r <- pmin(pmax(r, -1 + eps), 1 - eps)
-    # Fisher-z transformation: z = atanh(r)
-    corr_results[[paste0(cc, "_z")]] <- atanh(r)
+    # Fisher-z transformation: z = atanh(r), clipped to avoid Inf/-Inf
+    corr_results[[paste0(cc, "_z")]] <- safe_atanh(corr_results[[cc]])
   }
   
   # Check for extreme values
@@ -74,21 +78,34 @@ aggregate_to_sim_level <- function(corr_results, corr_cols) {
     )
   
   # Aggregate: Mean across RegimeIndex for each SimUID
-  # CORRELATIONS: Aggregate on z-scale. Beta_corr_z/Kappa_corr_z/
-  # Beta_ac_corr_pearson_z use a precision-weighted mean; any remaining
-  # z-outcome not in weighted_outcomes keeps the original simple mean.
-  # w_Beta/w_Kappa/w_BetaAC (sum of per-regime weights; variances of
-  # independent estimates add when averaging) are carried forward as the
-  # `weights=` argument for fit_lmer() in modeling.R.
+  # CORRELATIONS: aggregate ON THE RAW r-SCALE (precision-weighted for
+  # Beta_corr/Kappa_corr/Beta_ac_corr_pearson), THEN Fisher-z-transform the
+  # resulting per-simulation value ONCE. Any remaining z-outcome not in
+  # weighted_outcomes keeps a simple mean of the already-computed _z column
+  # (currently none are routed that way; kept for outcomes added later that
+  # are deliberately excluded from the weighting, e.g. Beta_ac_corr_spearman).
+  #
+  # CHANGED 2026-06-28 (was: weighted.mean on the _z columns directly, i.e.
+  # transform-then-average). atanh(r) -> Inf as r -> 1, so with only 1-4
+  # regimes per simulation, a single near-perfect regime could drag the
+  # back-transformed simulation-level mean far above where the regimes
+  # actually sit on average -- verified empirically: the old approach showed
+  # a SYSTEMATIC upward bias that grows with regime count (M=1: 0; M=2:
+  # +0.026; M=3: +0.062; M=4: +0.083 on the r-scale, averaged over all
+  # affected simulations), i.e. it specifically understated the recovery
+  # decline for high M, the design's dominant effect. Averaging on the raw
+  # scale first removes the mechanism entirely (no value can leverage the
+  # mean toward +-Inf), and the eps-clipped atanh() applied once afterwards
+  # still gives the LMMs the same bounded, variance-stabilised outcome scale.
   plain_z_cols <- setdiff(z_cols, weighted_z_cols)
   
   dat_sim <- corr_results_for_agg %>%
     group_by(SimUID, Condition, SimID,
              Timesteps_num, Density_num, Nodes_num, Regimes_num) %>%
     summarise(
-      Beta_corr_z           = stats::weighted.mean(Beta_corr_z,           w = weight_Beta,   na.rm = TRUE),
-      Kappa_corr_z          = stats::weighted.mean(Kappa_corr_z,          w = weight_Kappa,  na.rm = TRUE),
-      Beta_ac_corr_pearson_z = stats::weighted.mean(Beta_ac_corr_pearson_z, w = weight_BetaAC, na.rm = TRUE),
+      Beta_corr_z            = safe_atanh(stats::weighted.mean(Beta_corr,           w = weight_Beta,   na.rm = TRUE)),
+      Kappa_corr_z           = safe_atanh(stats::weighted.mean(Kappa_corr,          w = weight_Kappa,  na.rm = TRUE)),
+      Beta_ac_corr_pearson_z = safe_atanh(stats::weighted.mean(Beta_ac_corr_pearson, w = weight_BetaAC, na.rm = TRUE)),
       across(all_of(plain_z_cols), \(x) mean(x, na.rm = TRUE), .names = "{.col}"),
       w_Beta   = sum(weight_Beta,   na.rm = TRUE),
       w_Kappa  = sum(weight_Kappa,  na.rm = TRUE),
