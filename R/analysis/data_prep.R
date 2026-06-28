@@ -35,18 +35,55 @@ source("R/utils/average_controllability.R")    # est_Beta_ac from stored est_Bet
 #                  for that regime become NA -- per regime, never dropping the
 #                  whole fit, and never affecting Beta. Start near the old 1e6;
 #                  re-derive empirically on fresh data.
+#   max_plausible_magnitude
+#                  Added 2026-06-28 (NRMSE outlier investigation). Thresholding
+#                  (min_edg_val) only zeroes SMALL entries; it cannot cap large
+#                  ones. A small number of fits produce individual thresholded
+#                  Beta/Kappa entries that are tens to tens-of-thousands of times
+#                  larger than the generating range [0.05, 1] -- these are not
+#                  "slightly worse" estimates but numerically degenerate ones
+#                  (e.g. an under-regularized regression edge, or a Sigma_hat
+#                  that is well-conditioned by RATIO -- so it passes
+#                  KAPPA_COND_MAX -- but has uniformly tiny eigenvalues, so its
+#                  inverse still explodes). Because NRMSE is an *absolute*
+#                  squared-error measure, a single such entry can inflate it by
+#                  orders of magnitude (observed max: NRMSE_Beta = 84.7,
+#                  NRMSE_Kappa = 8423), even though it does not detectably
+#                  distort Beta_corr / Kappa_corr / Beta_ac_corr_pearson
+#                  (checked empirically: zero overlap with the |Fisher z| > 5
+#                  rows for any of the three correlation outcomes, and the
+#                  correlation values themselves are unremarkable for the
+#                  magnitude-flagged rows). The gate below therefore NAs only
+#                  NRMSE_Beta / NRMSE_Kappa for the affected regime -- mirroring
+#                  the KAPPA_COND_MAX gate's "per metric, never the whole fit"
+#                  philosophy -- rather than excluding rows post hoc based on
+#                  the NRMSE value itself (which would be circular: selecting
+#                  on the outcome you are trying to describe, and would
+#                  artificially hide exactly the hardest design cells this
+#                  metric is meant to characterise).
+#                  Default 10 (i.e. 10x the maximum |true edge weight|) was
+#                  derived empirically from the full distribution of
+#                  max(|thresholded entry|) across all regime-rows: the 95th
+#                  percentile is ~2.0 (Beta) / ~2.6 (Kappa), so a cutoff of 10
+#                  sits an order of magnitude above ordinary estimation noise
+#                  and only catches the genuinely degenerate long tail
+#                  (~0.9% of rows for Beta, ~2.7% for Kappa). Re-derive on
+#                  fresh data via the quantiles of max(|thresholded estimate|)
+#                  before trusting this default on a materially different design.
 #
 # Returns the input object (class/attrs preserved) with the derived columns
-# added, plus attr "sigma_validity_log": one row per per-regime observation
-# whose est_Sigma was flagged invalid.
+# added, plus attrs "sigma_validity_log" and "magnitude_validity_log": one row
+# per per-regime observation flagged invalid/implausible by the respective gate.
 compute_recovery_metrics <- function(MSAR_dynamics_list,
                                      min_edg_val   = 0.05,
                                      AC_HORIZON    = 25,
-                                     KAPPA_COND_MAX = 1e6) {
+                                     KAPPA_COND_MAX = 1e6,
+                                     max_plausible_magnitude = 10) {
 
   if (!inherits(MSAR_dynamics_list, "msar_results")) {
     stop("MSAR_dynamics_list is not an msar_results object. Please re-run estimate_MSAR().")
   }
+
 
   EDGE_VALUE_RANGE <- 2   # signed generating range [-1, 1] -> NRMSE=1 is full sign reversal
 
@@ -81,7 +118,8 @@ compute_recovery_metrics <- function(MSAR_dynamics_list,
   NRMSE_Beta   <- numeric(n)
   NRMSE_Kappa  <- numeric(n)
 
-  validity_records <- list()
+  validity_records  <- list()
+  magnitude_records <- list()
 
   for (r in seq_len(n)) {
     orig_Beta    <- MSAR_dynamics_list$orig_Beta[[r]]
@@ -98,6 +136,28 @@ compute_recovery_metrics <- function(MSAR_dynamics_list,
     Beta_sen[r]  <- bss[["sensitivity"]]
     Beta_spec[r] <- bss[["specificity"]]
     NRMSE_Beta[r] <- rmse_true_edges(as.vector(orig_Beta), as.vector(est_Beta)) / EDGE_VALUE_RANGE
+
+    # Plausibility gate (see max_plausible_magnitude doc above): thresholding
+    # only zeroes small entries, so a single numerically-degenerate large one
+    # (e.g. an under-regularized regression edge) survives untouched and can
+    # inflate NRMSE_Beta by orders of magnitude. Flagged per regime; nulls
+    # ONLY NRMSE_Beta -- Beta_corr/Beta_sen/Beta_spec/Beta_ac_corr_pearson
+    # (already computed above from the same est_Beta) are left untouched,
+    # since they were checked empirically to stay unaffected (see doc above).
+    max_abs_beta <- max(abs(est_Beta))
+    if (!is.finite(max_abs_beta) || max_abs_beta > max_plausible_magnitude) {
+      NRMSE_Beta[r] <- NA_real_
+      magnitude_records[[length(magnitude_records) + 1L]] <- tibble::tibble(
+        timesteps = MSAR_dynamics_list$timesteps[r],
+        density   = MSAR_dynamics_list$density[r],
+        nodes     = MSAR_dynamics_list$nodes[r],
+        regimes   = MSAR_dynamics_list$regimes[r],
+        ts_id     = MSAR_dynamics_list$ts_id[r],
+        regime_id = MSAR_dynamics_list$regime_id[r],
+        reason    = "beta_implausible_magnitude",
+        max_abs_value = max_abs_beta
+      )
+    }
 
     # Average controllability from the thresholded est_Beta (deterministic).
     ac <- average_controllability(est_Beta, T_ac = AC_HORIZON)
@@ -131,6 +191,30 @@ compute_recovery_metrics <- function(MSAR_dynamics_list,
       Kappa_spec[r] <- kss[["specificity"]]
       NRMSE_Kappa[r] <- rmse_true_edges(vectorize_upper_tri(orig_Kappa, diag = FALSE),
                                         vectorize_upper_tri(kap,        diag = FALSE)) / EDGE_VALUE_RANGE
+
+      # Plausibility gate, mirrors the Beta one above. A Sigma_hat can be
+      # well-conditioned BY RATIO (passes KAPPA_COND_MAX via rcond) while
+      # having uniformly tiny eigenvalues, so its inverse still explodes in
+      # absolute terms. Off-diagonal only, matching what NRMSE_Kappa scores
+      # (the diagonal is a different, unbounded inverse-variance scale and is
+      # never thresholded either -- see threshold_kappa_offdiag()). Nulls
+      # ONLY NRMSE_Kappa; Kappa_corr/Kappa_sen/Kappa_spec (already computed
+      # above from the same kap) are left untouched (checked empirically).
+      off_mask <- !diag(TRUE, nrow(kap))
+      max_abs_kappa <- max(abs(kap[off_mask]))
+      if (!is.finite(max_abs_kappa) || max_abs_kappa > max_plausible_magnitude) {
+        NRMSE_Kappa[r] <- NA_real_
+        magnitude_records[[length(magnitude_records) + 1L]] <- tibble::tibble(
+          timesteps = MSAR_dynamics_list$timesteps[r],
+          density   = MSAR_dynamics_list$density[r],
+          nodes     = MSAR_dynamics_list$nodes[r],
+          regimes   = MSAR_dynamics_list$regimes[r],
+          ts_id     = MSAR_dynamics_list$ts_id[r],
+          regime_id = MSAR_dynamics_list$regime_id[r],
+          reason    = "kappa_implausible_magnitude",
+          max_abs_value = max_abs_kappa
+        )
+      }
     } else {
       est_Kappa[[r]] <- NA
       Kappa_corr[r]  <- NA_real_
@@ -180,6 +264,29 @@ compute_recovery_metrics <- function(MSAR_dynamics_list,
   cat("Kappa metrics (Kappa_corr, NRMSE_Kappa, Kappa_sen/spec) set to NA for those rows;\n")
   cat("Beta metrics for the same rows are unaffected. See summarize_sigma_validity().\n")
 
+  magnitude_validity_log <- if (length(magnitude_records) > 0) {
+    dplyr::bind_rows(magnitude_records)
+  } else {
+    tibble::tibble(
+      timesteps = integer(0), density = numeric(0), nodes = integer(0),
+      regimes = integer(0), ts_id = integer(0), regime_id = integer(0),
+      reason = character(0), max_abs_value = numeric(0)
+    )
+  }
+  attr(MSAR_dynamics_list, "magnitude_validity_log") <- magnitude_validity_log
+
+  n_implausible <- nrow(magnitude_validity_log)
+  cat(sprintf("\n=== NRMSE PLAUSIBILITY (max_plausible_magnitude = %.0f) ===\nFlagged implausible: %d of %d regime rows (%.2f%%)\n",
+              max_plausible_magnitude, n_implausible, n, if (n > 0) 100 * n_implausible / n else 0))
+  if (n_implausible > 0) {
+    by_reason <- table(magnitude_validity_log$reason)
+    cat("  ", paste(names(by_reason), by_reason, sep = ": ", collapse = "; "), "\n")
+  }
+  cat("Only the affected NRMSE_Beta / NRMSE_Kappa value is set to NA -- the\n")
+  cat("corresponding correlation/sens/spec/AC-corr metrics for the same regime\n")
+  cat("are left untouched (checked empirically; see doc above). See\n")
+  cat("summarize_magnitude_validity().\n")
+
   MSAR_dynamics_list
 }
 
@@ -220,6 +327,44 @@ summarize_sigma_validity <- function(MSAR_dynamics_list,
 
   invisible(list(by_reason = by_reason, by_cell = by_cell,
                  cond_quantiles = cond_q, raw = vl))
+}
+
+# -----------------------------------------------------------------------------
+# Companion to summarize_sigma_validity(): inspect the NRMSE plausibility log
+# -----------------------------------------------------------------------------
+# Distinct mechanism from both summarize_failures() (non-convergence) and
+# summarize_sigma_validity() (ill-conditioned Sigma_hat, caught by RATIO via
+# rcond): here Sigma_hat passed the condition-number gate, or the inversion
+# was for Beta in the first place, but the thresholded estimate still contains
+# at least one entry more than `max_plausible_magnitude` times the generating
+# range -- a numerically degenerate single edge, not a uniformly worse fit.
+# Only NRMSE_Beta / NRMSE_Kappa are NA'd for that regime; everything else
+# (Beta_corr, Kappa_corr, sens/spec, Beta_ac_corr_pearson) is left untouched.
+summarize_magnitude_validity <- function(MSAR_dynamics_list,
+                                         by = c("timesteps", "density", "nodes", "regimes")) {
+
+  vl <- attr(MSAR_dynamics_list, "magnitude_validity_log")
+  if (is.null(vl) || nrow(vl) == 0) {
+    message("No magnitude-plausibility flags logged (all thresholded estimates within range).")
+    return(invisible(NULL))
+  }
+
+  by_reason <- vl %>% dplyr::count(reason, name = "n", sort = TRUE)
+  by_cell   <- vl %>%
+    dplyr::count(dplyr::across(dplyr::all_of(by)), reason, name = "n") %>%
+    dplyr::arrange(dplyr::desc(n))
+
+  mag_q <- stats::quantile(vl$max_abs_value, probs = c(0, .25, .5, .75, .9, .99, 1), na.rm = TRUE)
+
+  cat("=== MAGNITUDE-IMPLAUSIBLE REGIME ROWS: breakdown ===\n")
+  cat(sprintf("Total flagged: %d\n\n", nrow(vl)))
+  print(by_reason, n = Inf)
+  cat("\nmax(|thresholded entry|) quantiles among flagged rows:\n")
+  print(round(mag_q, 1))
+  cat("\nUse $by_cell for the per-condition breakdown, $raw for the full log.\n")
+
+  invisible(list(by_reason = by_reason, by_cell = by_cell,
+                 magnitude_quantiles = mag_q, raw = vl))
 }
 
 # -----------------------------------------------------------------------------
