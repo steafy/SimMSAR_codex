@@ -49,7 +49,7 @@ max_edg_val <- 1              # Maximum absolute edge weight in networks
 # -----------------------------------------------------------------------------
 # Time Series Parameters
 # -----------------------------------------------------------------------------
-T <- c(250, 500, 1000, 2000, 4000)            # Number of time steps per time series
+T <- c(200, 400, 800, 1600)   # Number of time steps per time series
                               # Can be a vector: c(1000, 3500, 5000)
  
 warmup <- 50                  # Number of warmup time steps (discarded from analysis)
@@ -57,7 +57,7 @@ warmup <- 50                  # Number of warmup time steps (discarded from anal
 
 totTime <- T + warmup         # Total time steps including warmup
 
-n_ts <- 50                    # Number of time series to generate per condition
+n_ts <- 150                   # Number of time series to generate per condition
                               # Higher = more statistical power but slower
 
 # -----------------------------------------------------------------------------
@@ -100,7 +100,7 @@ if (save_output && !dir.exists(output_dir)) {
 # IMPORTANT: This must be set BEFORE generate_timeseries() is called
 # All random operations (network generation, time series simulation,
 # model initialization) will be reproducible with this single seed
-set.seed(37593)
+set.seed(58396)
 
 # =============================================================================
 # PARAMETER SUMMARY

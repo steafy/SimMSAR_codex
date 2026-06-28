@@ -77,7 +77,10 @@ PACKAGES <- list(
   # Utilities
   utilities = c(
     "progress",     # Progress bars for loops
-    "clue"          # Cluster ensembles, Hungarian algorithm for assignment
+    "clue",         # Cluster ensembles, Hungarian algorithm for assignment
+    "future",       # Unified parallel-execution backend (multisession etc.)
+    "future.apply", # apply-family functions (future_lapply) over future plans
+    "progressr"     # Cross-process progress reporting, future-aware
   )
 )
 
