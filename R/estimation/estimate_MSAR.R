@@ -1,4 +1,4 @@
-#' Estimate MSAR Models from Time Series Data (raw estimates only)
+#' Estimate MSAR Models from Time Series Data (raw estimates only, parallel)
 #'
 #' Estimation pipeline that fits Markov-Switching Autoregressive (MSAR) models to
 #' each simulated time series and returns the \emph{raw, uninterpreted} estimates
@@ -17,7 +17,9 @@
 #' @param n_ts Integer. Number of time series per condition.
 #' @param order Integer. AR order for the VAR model (typically 1).
 #' @param MaxIter Integer. Maximum EM algorithm iterations.
-#' @param verbose Logical. If TRUE, prints detailed progress messages.
+#' @param verbose Logical. If TRUE, prints detailed progress messages. Note:
+#'   with parallel workers, message()/cat() output from individual fits may be
+#'   interleaved/delayed; this only affects what you see on screen, not results.
 #' @param min_edg_val Numeric. Retained for call-site compatibility but
 #'   \strong{no longer used here}: edge thresholding is a scoring decision and
 #'   now lives in the analysis pipeline (\code{compute_recovery_metrics()}),
@@ -25,6 +27,14 @@
 #'   \code{est_Kappa}. Pass the intended threshold there instead.
 #' @param Timeseries_data Tibble. Output from \code{generate_timeseries} containing
 #'   simulated data and true dynamics in tibble format with list-columns.
+#' @param workers Integer. Number of parallel worker processes (via
+#'   \code{future::multisession}, which works identically on Windows/Mac/Linux).
+#'   Defaults to \code{max(1, parallel::detectCores(logical = FALSE) - 1)}, i.e.
+#'   one less than the number of PHYSICAL cores -- this is a conservative
+#'   starting point for compute-bound numerical work (EM + LASSO), where
+#'   hyperthreading on logical cores typically buys only a modest amount of
+#'   extra throughput. Pass \code{workers = 1} to fall back to fully sequential
+#'   execution (e.g. for debugging or a sanity-check comparison run).
 #'
 #' @return An \code{msar_results} tibble with \strong{one row per regime per
 #'   successfully fitted time series} and only the raw quantities:
@@ -62,6 +72,38 @@
 #' (4) store the raw matrices. No edge thresholding, no covariance inversion, no
 #' near-singular-Sigma gate -- those moved to analysis.
 #'
+#' PARALLELISATION (2026-06): every (T, Density, N, M, replication) combination
+#' is a fully independent fit on its own simulated series -- embarrassingly
+#' parallel. Implemented via \code{future.apply::future_lapply()} over
+#' \code{future::multisession} workers (portable: identical on Windows/Mac/
+#' Linux, unlike \code{future::multicore} which silently falls back to
+#' sequential on Windows). Three points this design specifically addresses:
+#' \itemize{
+#'   \item \strong{Memory}: \code{Timeseries_data} is sliced into one minimal
+#'     per-task payload BEFORE the parallel section (\code{build_task_data()}),
+#'     and the big tibble is then dropped (\code{rm() + gc()}) from the calling
+#'     process. \code{future_lapply} ships each worker only the slice of tasks
+#'     it actually runs, not the whole input -- avoiding an N-times-duplicated
+#'     copy of a potentially multi-GB object across N worker processes.
+#'   \item \strong{Reproducibility}: \code{future.seed = TRUE} derives an
+#'     L'Ecuyer-CMRG parallel RNG stream from the current \code{.Random.seed},
+#'     giving fully reproducible results across repeated runs of the SAME
+#'     script -- but the actual numeric values will differ from any prior
+#'     SERIAL run with the same \code{set.seed()}, since draws are consumed in
+#'     a different order. This is expected and statistically immaterial.
+#'   \item \strong{Load balancing}: \code{future.scheduling = Inf} dispatches
+#'     one task at a time rather than pre-chunking, because fit cost is highly
+#'     heterogeneous across the design grid (e.g. N=8/T=4000/M=4 is vastly more
+#'     expensive than N=4/T=250/M=1); per-task dispatch overhead is negligible
+#'     next to multi-second fit times, so this trades a little overhead for
+#'     much better balance across workers.
+#' }
+#' Packages are NOT part of \code{future}'s automatic global-export (only plain
+#' R objects/closures are), so each worker re-attaches them via
+#' \code{ensure_worker_packages()}, guarded to run only once per worker process
+#' (multisession workers are a persistent pool reused across tasks, not
+#' respawned per call).
+#'
 #' @note Dependencies are loaded centrally via R/dependencies.R.
 #'
 #' @seealso
@@ -84,252 +126,381 @@ source("R/estimation/match_regimes.R")
 source("R/estimation/reconstruct_regime_sequence.R")
 
 
-estimate_MSAR <- function(Density, N, M, T, n_ts, order, MaxIter, verbose, min_edg_val,
-                          Timeseries_data) {
+# -----------------------------------------------------------------------------
+# Re-attach packages inside a worker process. Plain R objects/functions defined
+# via source() are auto-exported by future's globals-detection, but attached
+# PACKAGES are process-level state and are never auto-exported -- every worker
+# needs its own library() calls. Guarded via an option flag so a persistent
+# multisession worker only pays this cost once, not on every one of thousands
+# of tasks it processes over the life of the future::plan().
+ensure_worker_packages <- function() {
+  if (!isTRUE(getOption("simmsar_worker_pkgs_loaded"))) {
+    if (exists("load_packages", mode = "function")) {
+      load_packages(quietly = TRUE)
+    } else {
+      source("R/dependencies.R")
+    }
+    options(simmsar_worker_pkgs_loaded = TRUE)
+  }
+}
 
-  # Setup progressbar
-  print("Estimating MSAR models from timeseries", quote = FALSE)
-  pb <- progress_bar$new(
-    format = "[:bar] :percent :elapsedfull Elapsed, :eta Remaining",
-    total = length(T) * length(Density) * length(N) * length(M) * n_ts,
-    clear = FALSE,
-    width = 80
+# -----------------------------------------------------------------------------
+# Typed empty schemas, shared by the per-cell combine (fit_one_cell) and the
+# final top-level combine (estimate_MSAR) -- both can hit the "nothing
+# succeeded" edge case (a whole cell where every replicate failed; or, at the
+# top level, every cell). Centralised here so both stay in sync.
+empty_regime_rows_schema <- function() {
+  tibble::tibble(
+    timesteps = integer(0), density = numeric(0), nodes = integer(0),
+    regimes = integer(0), ts_id = integer(0), regime_id = integer(0),
+    orig_Beta = list(), est_Beta = list(), orig_Kappa = list(),
+    orig_Sigma = list(), est_Sigma = list(), orig_Beta_ac = list()
   )
-
-  # PERFORMANCE: Pre-allocate the per-regime tibble to its maximum possible size
-  # (avoids costly row-binding in the loop). Raw quantities only.
-  max_rows <- length(T) * length(Density) * length(N) * length(M) * n_ts * max(M)
-
-  msar_results <- tibble::tibble(
-    timesteps = integer(max_rows),
-    density   = numeric(max_rows),
-    nodes     = integer(max_rows),
-    regimes   = integer(max_rows),
-    ts_id     = integer(max_rows),
-    regime_id = integer(max_rows),
-
-    # Raw network matrices (list-columns). est_Beta / est_Sigma stored as-is.
-    orig_Beta    = vector("list", max_rows),
-    est_Beta     = vector("list", max_rows),
-    orig_Kappa   = vector("list", max_rows),
-    orig_Sigma   = vector("list", max_rows),
-    est_Sigma    = vector("list", max_rows),
-    orig_Beta_ac = vector("list", max_rows)
+}
+empty_fit_row_schema <- function() {
+  tibble::tibble(
+    timesteps = integer(0), density = numeric(0), nodes = integer(0),
+    regimes = integer(0), ts_id = integer(0),
+    orig_TPM = list(), est_TPM = list(),
+    orig_regime_sequence = list(), est_regime_sequence = list()
   )
-  row_idx <- 0
-
-  # Pre-allocate the fit-level table (one row per fit; TPM + sequences are
-  # properties of the whole fit, not of an individual regime).
-  max_fit_rows <- length(T) * length(Density) * length(N) * length(M) * n_ts
-
-  fit_results <- tibble::tibble(
-    timesteps = integer(max_fit_rows),
-    density   = numeric(max_fit_rows),
-    nodes     = integer(max_fit_rows),
-    regimes   = integer(max_fit_rows),
-    ts_id     = integer(max_fit_rows),
-    orig_TPM  = vector("list", max_fit_rows),
-    est_TPM   = vector("list", max_fit_rows),
-    orig_regime_sequence = vector("list", max_fit_rows),
-    est_regime_sequence  = vector("list", max_fit_rows)
+}
+empty_failure_schema <- function() {
+  tibble::tibble(
+    timesteps = integer(0), density = numeric(0), nodes = integer(0),
+    regimes = integer(0), ts_id = integer(0),
+    stage = character(0), error = character(0)
   )
-  fit_idx <- 0
+}
+bind_or_empty <- function(piece_list, empty_fun) {
+  piece_list <- piece_list[!vapply(piece_list, is.null, logical(1))]
+  if (length(piece_list) > 0) dplyr::bind_rows(piece_list) else empty_fun()
+}
 
-  # Diagnostic failure log: records WHY and WHERE each fit was discarded, so the
-  # missingness mechanism is inspectable. Attached as attr "failure_log";
-  # summarise with summarize_failures(). NOTE: the old whole-fit drop on a
-  # near-singular est_Sigma is gone -- that is now a per-regime NA flag applied
-  # in analysis (sigma_validity_log), a distinct mechanism from this log.
-  failure_records <- list()
-  log_failure <- function(stage, error_msg) {
-    failure_records[[length(failure_records) + 1L]] <<- tibble::tibble(
-      timesteps = T[t],
-      density   = Density[i],
-      nodes     = N[j],
-      regimes   = M[k],
-      ts_id     = l,
-      stage     = stage,
-      error     = if (is.null(error_msg) || length(error_msg) == 0)
-                    NA_character_
-                  else paste(trimws(error_msg), collapse = " ")
+# -----------------------------------------------------------------------------
+# Build one payload per DESIGN CELL (T, Density, N, M combination), each
+# bundling all n_ts replicates. Dispatching whole cells rather than
+# individual replicates as separate future_lapply tasks is the key lever for
+# wall-clock time: every dispatched task pays a fixed serialisation/IPC cost
+# under multisession (sending data to a worker, returning a result), and with
+# n_ts in the tens to hundreds, dispatching per-replicate makes that fixed
+# cost a large fraction of total time for what are often only few-second
+# fits. Bundling by cell divides the number of dispatches by n_ts, while
+# leaving cross-CELL load-balancing untouched -- the real cost heterogeneity
+# in this design (N=8/T=4000/M=4 vs. N=4/T=250/M=1) is between cells, not
+# between replicates of the same cell, so nothing is lost there.
+build_cell_data <- function(Timeseries_data, T, Density, N, M, n_ts) {
+  
+  cell_grid <- expand.grid(
+    k = seq_along(M), j = seq_along(N), i = seq_along(Density), t = seq_along(T),
+    KEEP.OUT.ATTRS = FALSE
+  )
+  n_cells <- nrow(cell_grid)
+  cell_data <- vector("list", n_cells)
+  
+  for (c in seq_len(n_cells)) {
+    t <- cell_grid$t[c]; i <- cell_grid$i[c]; j <- cell_grid$j[c]; k <- cell_grid$k[c]
+    
+    replicates <- vector("list", n_ts)
+    for (l in seq_len(n_ts)) {
+      current_row <- Timeseries_data %>%
+        dplyr::filter(timesteps == T[t], density == Density[i],
+                      nodes == N[j], regimes == M[k], ts_id == l)
+      
+      replicates[[l]] <- list(
+        l = l,
+        timeseries_data = if (nrow(current_row) > 0) current_row$timeseries_data[[1]] else NULL,
+        regime_dynamics = if (nrow(current_row) > 0) current_row$regime_dynamics[[1]] else NULL,
+        regime_sequence = if (nrow(current_row) > 0) current_row$regime_sequence[[1]] else NULL,
+        transmat        = if (nrow(current_row) > 0) current_row$transmat[[1]]        else NULL
+      )
+    }
+    
+    cell_data[[c]] <- list(
+      t = t, i = i, j = j, k = k,
+      timesteps_val = T[t], density_val = Density[i],
+      nodes_val     = N[j], regimes_val = M[k],
+      replicates    = replicates
     )
   }
+  
+  cell_data
+}
 
-  for (t in seq_along(T)) {
-    for (i in seq_along(Density)) {
-      for (j in seq_along(N)) {
-        for (k in seq_along(M)) {
-          for (l in 1:n_ts) {
-
-            loc <- paste0("t=", t, ", i=", i, ", j=", j, ", k=", k, ", l=", l)
-
-            if (verbose) {
-              print("", quote = FALSE)
-              print(paste("Timeseries:", loc), quote = FALSE)
-            }
-
-            # Get complete data for current timeseries from tibble
-            current_row <- Timeseries_data %>%
-              filter(timesteps == T[t], density == Density[i],
-                     nodes == N[j], regimes == M[k], ts_id == l)
-
-            if (nrow(current_row) == 0) {
-              message("No timeseries data found for condition: ",
-                      "T=", T[t], " D=", Density[i], " N=", N[j], " M=", M[k], " ts=", l)
-              log_failure("no_data", "no timeseries data found for condition")
-              pb$tick()
-              next
-            }
-
-            current_ts      <- current_row$timeseries_data[[1]]
-            current_regimes <- current_row$regime_dynamics[[1]]
-
-            # Normalisation hook (currently identity; see generate_timeseries.R)
-            current_ts_norm <- current_ts
-
-            # Make 3D array (time, samples = 1, nodes) expected by the fitter
-            timesteps <- T[t]
-            d         <- ncol(current_ts_norm)
-            current_ts_norm_array <- array(data = current_ts_norm,
-                                           dim = c(timesteps, 1, d))
-
-            # Fit MSAR model (EM + LASSO + retry; unchanged)
-            result    <- init_and_fit_msar_lasso(
-              data    = current_ts_norm_array,
-              M       = M[k],
-              order   = order,
-              MaxIter = MaxIter,
-              retry   = 5,
-              verbose = verbose
-            )
-            model_fit <- result[["fit"]]
-            error     <- result[["error"]]
-
-            if (is.null(model_fit)) {
-              message("ignore fit! ", "\n\tTimeseries_data: ", loc, "\n\terror: ", error)
-              log_failure("fit_null", error)
-              pb$tick()
-              next
-            }
-
-            # --- Raw estimates ---------------------------------------------------
-            est_Betas  <- model_fit[["theta"]][["A"]]      # list per regime, each $A1
-            est_sigmas <- model_fit[["theta"]][["sigma"]]  # list per regime
-            est_TPM    <- model_fit[["theta"]][["transmat"]]
-
-            # Named lists (Regime1..M) of raw matrices, in regime order.
-            est_Betas_mat <- setNames(
-              lapply(seq_len(M[k]), function(m) est_Betas[[m]][["A1"]]),
-              paste0("Regime", seq_len(M[k]))
-            )
-            orig_Betas <- setNames(
-              lapply(seq_len(M[k]), function(m) current_regimes[[paste0("Regime", m)]][["Beta"]]),
-              paste0("Regime", seq_len(M[k]))
-            )
-
-            # --- Regime matching (Hungarian on raw vectorised Beta) --------------
-            assigned_regimes <- match_regimes(orig_Betas, est_Betas_mat)
-            if (is.null(assigned_regimes)) {
-              # Degenerate (zero-variance) estimated Beta -> cannot match.
-              log_failure("zero_var_beta", "estimated Beta has zero variance in at least one regime")
-              pb$tick()
-              next
-            }
-
-            # --- Store one raw row per regime (true-regime order 1..M) -----------
-            for (m in seq_len(nrow(assigned_regimes))) {
-              orig_idx <- assigned_regimes[[m, 1]]   # true regime label (== m)
-              est_idx  <- assigned_regimes[[m, 2]]   # matched estimated regime label
-              row_idx  <- row_idx + 1
-
-              orig_reg <- current_regimes[[paste0("Regime", orig_idx)]]
-
-              msar_results$timesteps[row_idx] <- T[t]
-              msar_results$density[row_idx]   <- Density[i]
-              msar_results$nodes[row_idx]     <- N[j]
-              msar_results$regimes[row_idx]   <- M[k]
-              msar_results$ts_id[row_idx]     <- l
-              msar_results$regime_id[row_idx] <- orig_idx
-
-              msar_results$orig_Beta[[row_idx]]    <- orig_reg[["Beta"]]
-              msar_results$est_Beta[[row_idx]]     <- est_Betas_mat[[est_idx]]
-              msar_results$orig_Kappa[[row_idx]]   <- orig_reg[["kappa"]]
-              msar_results$orig_Sigma[[row_idx]]   <- orig_reg[["sigma"]]
-              msar_results$est_Sigma[[row_idx]]    <- est_sigmas[[est_idx]]
-              msar_results$orig_Beta_ac[[row_idx]] <- orig_reg[["Beta_ac"]]
-            }
-
-            # --- Fit-level row: TPM + regime sequences, relabelled to true order -
-            # Permutation: for true regime t1, the matching estimated label.
-            perm <- assigned_regimes[, 2]
-            est_TPM_relabelled <- est_TPM[perm, perm, drop = FALSE]
-            dimnames(est_TPM_relabelled) <- list(paste0("Regime", seq_len(M[k])),
-                                                 paste0("Regime", seq_len(M[k])))
-
-            # True sequence alignment: regime_sequence has length (totTime - 1);
-            # the trimmed series keeps the last T rows, and the order-1 fit drops
-            # the first of those as the initial AR lag -> smoothed probs have
-            # T - 1 rows. Take the last T true entries, drop the first to match.
-            true_seq_full <- current_row$regime_sequence[[1]]
-            true_seq      <- utils::tail(true_seq_full, T[t])[-1]
-
-            # M == 1 has no latent switching: the decoded sequence is trivially
-            # all-regime-1, and smoothedprob may be absent -- handle without
-            # touching the EM object. Sequence recovery (RQ4) is analysed for
-            # regimes >= 2 only anyway.
-            if (M[k] > 1) {
-              seq_mapped <- reconstruct_regime_sequence(
-                model_fit[["smoothedprob"]], assigned_regimes
-              )$mapped
-            } else {
-              seq_mapped <- rep(1L, length(true_seq))
-            }
-
-            # Guard against a length mismatch (e.g. unexpected smoothedprob
-            # dimensions): store the fit-level row only when the sequences align,
-            # so downstream accuracy/Cohen's kappa is well-defined.
-            if (length(true_seq) == length(seq_mapped)) {
-              fit_idx <- fit_idx + 1
-              fit_results$timesteps[fit_idx] <- T[t]
-              fit_results$density[fit_idx]   <- Density[i]
-              fit_results$nodes[fit_idx]     <- N[j]
-              fit_results$regimes[fit_idx]   <- M[k]
-              fit_results$ts_id[fit_idx]     <- l
-              fit_results$orig_TPM[[fit_idx]] <- current_row$transmat[[1]]
-              fit_results$est_TPM[[fit_idx]]  <- est_TPM_relabelled
-              fit_results$orig_regime_sequence[[fit_idx]] <- true_seq
-              fit_results$est_regime_sequence[[fit_idx]]  <- seq_mapped
-            } else {
-              message("Skipping fit-level sequence row for ", loc,
-                      ": length mismatch (true = ", length(true_seq),
-                      ", est = ", length(seq_mapped), ")")
-            }
-
-            pb$tick()
-          }
-        }
-      }
-    }
+# -----------------------------------------------------------------------------
+# Fit ONE replicate within a cell. Pure function: takes its own minimal data
+# slice, returns its own result pieces -- no shared mutable state.
+fit_one_replicate <- function(cell, rep, order, MaxIter, verbose) {
+  
+  loc <- paste0("T=", cell$timesteps_val, ", D=", cell$density_val,
+                ", N=", cell$nodes_val, ", M=", cell$regimes_val, ", ts=", rep$l)
+  
+  make_failure <- function(stage, error_msg) {
+    tibble::tibble(
+      timesteps = cell$timesteps_val, density = cell$density_val,
+      nodes     = cell$nodes_val,     regimes = cell$regimes_val, ts_id = rep$l,
+      stage     = stage,
+      error     = if (is.null(error_msg) || length(error_msg) == 0) NA_character_
+      else paste(trimws(error_msg), collapse = " ")
+    )
   }
+  
+  if (is.null(rep$timeseries_data)) {
+    message("No timeseries data found for condition: ", loc)
+    return(list(regime_rows = NULL, fit_row = NULL,
+                failure = make_failure("no_data", "no timeseries data found for condition")))
+  }
+  
+  if (verbose) {
+    print("", quote = FALSE)
+    print(paste("Timeseries:", loc), quote = FALSE)
+  }
+  
+  current_ts      <- rep$timeseries_data
+  current_regimes <- rep$regime_dynamics
+  current_ts_norm <- current_ts  # Normalisation hook (currently identity)
+  
+  timesteps_t <- cell$timesteps_val
+  d           <- ncol(current_ts_norm)
+  current_ts_norm_array <- array(data = current_ts_norm, dim = c(timesteps_t, 1, d))
+  
+  # Fit MSAR model (EM + LASSO + retry; unchanged)
+  result    <- init_and_fit_msar_lasso(
+    data    = current_ts_norm_array,
+    M       = cell$regimes_val,
+    order   = order,
+    MaxIter = MaxIter,
+    retry   = 5,
+    verbose = verbose
+  )
+  model_fit <- result[["fit"]]
+  error     <- result[["error"]]
+  
+  if (is.null(model_fit)) {
+    message("ignore fit! ", "\n\tTimeseries_data: ", loc, "\n\terror: ", error)
+    return(list(regime_rows = NULL, fit_row = NULL,
+                failure = make_failure("fit_null", error)))
+  }
+  
+  # --- Raw estimates -----------------------------------------------------
+  est_Betas  <- model_fit[["theta"]][["A"]]      # list per regime, each $A1
+  est_sigmas <- model_fit[["theta"]][["sigma"]]  # list per regime
+  est_TPM    <- model_fit[["theta"]][["transmat"]]
+  
+  est_Betas_mat <- setNames(
+    lapply(seq_len(cell$regimes_val), function(m) est_Betas[[m]][["A1"]]),
+    paste0("Regime", seq_len(cell$regimes_val))
+  )
+  orig_Betas <- setNames(
+    lapply(seq_len(cell$regimes_val), function(m) current_regimes[[paste0("Regime", m)]][["Beta"]]),
+    paste0("Regime", seq_len(cell$regimes_val))
+  )
+  
+  # --- Regime matching (Hungarian on raw vectorised Beta) ----------------
+  assigned_regimes <- match_regimes(orig_Betas, est_Betas_mat)
+  if (is.null(assigned_regimes)) {
+    return(list(regime_rows = NULL, fit_row = NULL,
+                failure = make_failure("zero_var_beta",
+                                       "estimated Beta has zero variance in at least one regime")))
+  }
+  
+  # --- One raw row per regime (true-regime order 1..M) --------------------
+  regime_rows <- vector("list", nrow(assigned_regimes))
+  for (m in seq_len(nrow(assigned_regimes))) {
+    orig_idx <- assigned_regimes[[m, 1]]   # true regime label (== m)
+    est_idx  <- assigned_regimes[[m, 2]]   # matched estimated regime label
+    orig_reg <- current_regimes[[paste0("Regime", orig_idx)]]
+    
+    regime_rows[[m]] <- tibble::tibble(
+      timesteps = cell$timesteps_val, density = cell$density_val,
+      nodes     = cell$nodes_val,     regimes = cell$regimes_val,
+      ts_id     = rep$l,              regime_id = orig_idx,
+      orig_Beta    = list(orig_reg[["Beta"]]),
+      est_Beta     = list(est_Betas_mat[[est_idx]]),
+      orig_Kappa   = list(orig_reg[["kappa"]]),
+      orig_Sigma   = list(orig_reg[["sigma"]]),
+      est_Sigma    = list(est_sigmas[[est_idx]]),
+      orig_Beta_ac = list(orig_reg[["Beta_ac"]])
+    )
+  }
+  regime_rows <- dplyr::bind_rows(regime_rows)
+  
+  # --- Fit-level row: TPM + regime sequences, relabelled to true order ----
+  perm <- assigned_regimes[, 2]
+  est_TPM_relabelled <- est_TPM[perm, perm, drop = FALSE]
+  dimnames(est_TPM_relabelled) <- list(paste0("Regime", seq_len(cell$regimes_val)),
+                                       paste0("Regime", seq_len(cell$regimes_val)))
+  
+  # True sequence alignment: regime_sequence has length (totTime - 1); the
+  # trimmed series keeps the last T rows, and the order-1 fit drops the first
+  # of those as the initial AR lag -> smoothed probs have T - 1 rows. Take the
+  # last T true entries, drop the first to match.
+  true_seq_full <- rep$regime_sequence
+  true_seq      <- utils::tail(true_seq_full, cell$timesteps_val)[-1]
+  
+  # M == 1 has no latent switching: the decoded sequence is trivially
+  # all-regime-1, and smoothedprob may be absent -- handle without touching
+  # the EM object. Sequence recovery (RQ4) is analysed for regimes >= 2 only.
+  if (cell$regimes_val > 1) {
+    seq_mapped <- reconstruct_regime_sequence(
+      model_fit[["smoothedprob"]], assigned_regimes
+    )$mapped
+  } else {
+    seq_mapped <- rep(1L, length(true_seq))
+  }
+  
+  fit_row <- NULL
+  if (length(true_seq) == length(seq_mapped)) {
+    fit_row <- tibble::tibble(
+      timesteps = cell$timesteps_val, density = cell$density_val,
+      nodes     = cell$nodes_val,     regimes = cell$regimes_val, ts_id = rep$l,
+      orig_TPM = list(rep$transmat),
+      est_TPM  = list(est_TPM_relabelled),
+      orig_regime_sequence = list(true_seq),
+      est_regime_sequence  = list(seq_mapped)
+    )
+  } else {
+    message("Skipping fit-level sequence row for ", loc,
+            ": length mismatch (true = ", length(true_seq),
+            ", est = ", length(seq_mapped), ")")
+  }
+  
+  list(regime_rows = regime_rows, fit_row = fit_row, failure = NULL)
+}
 
-  # Trim to actual size. seq_len() (not 1:n) so n == 0 selects nothing.
-  msar_results <- msar_results[seq_len(row_idx), ]
-  fit_results  <- fit_results[seq_len(fit_idx), ]
+# -----------------------------------------------------------------------------
+# Fit an entire CELL (all n_ts replicates). This -- not fit_one_replicate --
+# is the unit dispatched to future_lapply. Packages are attached once here
+# (not per replicate): cheap after the first call on a given persistent
+# worker, so doing it at the cell level rather than the replicate level
+# saves nothing functionally but keeps the call site singular and obvious.
+fit_one_cell <- function(cell, order, MaxIter, verbose, progress_fun = NULL) {
+  
+  ensure_worker_packages()
+  
+  regime_list  <- vector("list", length(cell$replicates))
+  fit_list     <- vector("list", length(cell$replicates))
+  failure_list <- vector("list", length(cell$replicates))
+  
+  for (r in seq_along(cell$replicates)) {
+    out <- fit_one_replicate(cell, cell$replicates[[r]], order, MaxIter, verbose)
+    regime_list[[r]]  <- out$regime_rows
+    fit_list[[r]]     <- out$fit_row
+    failure_list[[r]] <- out$failure
+    if (!is.null(progress_fun)) progress_fun()
+  }
+  
+  list(
+    regime_rows = bind_or_empty(regime_list,  empty_regime_rows_schema),
+    fit_row     = bind_or_empty(fit_list,     empty_fit_row_schema),
+    failure     = bind_or_empty(failure_list, empty_failure_schema)
+  )
+}
 
+
+estimate_MSAR <- function(Density, N, M, T, n_ts, order, MaxIter, verbose, min_edg_val,
+                          Timeseries_data, workers = NULL) {
+  
+  if (is.null(workers)) {
+    workers <- max(1, parallel::detectCores(logical = FALSE) - 1)
+  }
+  
+  print(sprintf("Estimating MSAR models from timeseries (%d parallel worker%s)",
+                workers, if (workers == 1) "" else "s"), quote = FALSE)
+  
+  # future::multisession works identically on Windows/Mac/Linux (unlike
+  # future::multicore, which silently falls back to sequential on Windows).
+  # workers = 1 collapses to fully sequential execution (also useful as a
+  # debugging / sanity-check fallback).
+  old_plan <- future::plan()
+  if (workers <= 1) {
+    future::plan(future::sequential)
+  } else {
+    future::plan(future::multisession, workers = workers)
+  }
+  on.exit(future::plan(old_plan), add = TRUE)
+  
+  # Build the per-cell payload BEFORE going parallel, then drop the (possibly
+  # multi-GB) full Timeseries_data tibble from the calling process: each
+  # worker will only receive the slice of cell_data it actually runs, via
+  # future_lapply's own chunking of its X argument -- NOT a closure-captured
+  # copy of the whole object. Dispatching whole CELLS (all n_ts replicates
+  # bundled) rather than individual replicates is what keeps per-dispatch
+  # IPC/serialisation overhead from dominating wall-clock time -- see the
+  # comment on build_cell_data() above.
+  cat("Slicing time series data into per-cell payloads...\n")
+  cell_data <- build_cell_data(Timeseries_data, T, Density, N, M, n_ts)
+  n_cells   <- length(cell_data)
+  n_total   <- n_cells * n_ts
+  rm(Timeseries_data); invisible(gc(verbose = FALSE))
+  
+  # Live cross-process progress bar (the old `progress` package's progress_bar
+  # only updates a LOCAL copy inside whichever worker calls tick() -- it never
+  # reaches the main console under multisession. progressr is the standard
+  # future-aware replacement: each worker's p() call is relayed back here).
+  # Progress is still reported per REPLICATE (n_total steps), even though the
+  # dispatch unit is the cell -- fit_one_cell() calls progress_fun() after
+  # each of its n_ts replicates, so the bar doesn't go quiet for the full
+  # duration of a large cell.
+  if (requireNamespace("progressr", quietly = TRUE)) {
+    progressr::handlers(progressr::handler_progress(
+      format = "[:bar] :percent :elapsedfull Elapsed, :eta Remaining"
+    ))
+    results <- progressr::with_progress({
+      p <- progressr::progressor(steps = n_total)
+      # Pass fit_one_cell BARE (with order/MaxIter/verbose/progress_fun as named
+      # ... args), exactly like the no-progressr branch below. Do NOT wrap it in
+      # an anonymous `function(cell) fit_one_cell(...)` defined here: that closure
+      # would close over THIS (estimate_MSAR) evaluation frame, which still holds
+      # the multi-GB `cell_data`. future serialises an exported function together
+      # with its environment, so the wrapper would drag a full copy of cell_data
+      # into every future as the global 'FUN' -- tripping
+      # future.globals.maxSize (the "FUN is 900 MiB of class function" error) and
+      # duplicating the whole dataset to each worker. fit_one_cell lives in the
+      # global env (sourced), so passing it bare exports only the small function,
+      # while cell_data still ships correctly -- and only sliced -- as X.
+      future.apply::future_lapply(
+        cell_data,
+        fit_one_cell,
+        order = order, MaxIter = MaxIter, verbose = verbose, progress_fun = p,
+        future.seed = TRUE,
+        future.scheduling = Inf  # one CELL per dispatch: cost is highly
+        # heterogeneous across cells (e.g. N=8/
+        # T=4000/M=4 vs. N=4/T=250/M=1), so
+        # fine-grained scheduling balances workers
+        # much better than pre-chunking. Bundling
+        # all n_ts replicates per cell already keeps
+        # the number of dispatches small (n_cells,
+        # not n_cells*n_ts), so this no longer
+        # incurs per-replicate dispatch overhead.
+      )
+    })
+  } else {
+    message("Package 'progressr' not installed -- running without a live progress bar.\n",
+            "Install it (install.packages(\"progressr\")) for progress reporting across workers.")
+    results <- future.apply::future_lapply(
+      cell_data,
+      fit_one_cell, order = order, MaxIter = MaxIter, verbose = verbose,
+      future.seed = TRUE, future.scheduling = Inf
+    )
+  }
+  
+  # ---------------------------------------------------------------------------
+  # Combine the per-cell results returned by all workers (each is already
+  # internally bound across that cell's n_ts replicates, see fit_one_cell()).
+  # ---------------------------------------------------------------------------
+  regime_list  <- lapply(results, `[[`, "regime_rows")
+  fit_list     <- lapply(results, `[[`, "fit_row")
+  failure_list <- lapply(results, `[[`, "failure")
+  
+  msar_results <- bind_or_empty(regime_list,  empty_regime_rows_schema)
+  fit_results  <- bind_or_empty(fit_list,     empty_fit_row_schema)
+  failure_log  <- bind_or_empty(failure_list, empty_failure_schema)
+  
   class(msar_results) <- c("msar_results", class(msar_results))
   attr(msar_results, "fit_results") <- fit_results
-
-  failure_log <- if (length(failure_records) > 0) {
-    dplyr::bind_rows(failure_records)
-  } else {
-    tibble::tibble(
-      timesteps = integer(0), density = numeric(0), nodes = integer(0),
-      regimes = integer(0), ts_id = integer(0),
-      stage = character(0), error = character(0)
-    )
-  }
   attr(msar_results, "failure_log") <- failure_log
-
+  
   msar_results
 }
 
@@ -363,13 +534,13 @@ estimate_MSAR <- function(Density, N, M, T, n_ts, order, MaxIter, verbose, min_e
 #' @export
 summarize_failures <- function(msar_results,
                                by = c("timesteps", "density", "nodes", "regimes")) {
-
+  
   fl <- attr(msar_results, "failure_log")
   if (is.null(fl) || nrow(fl) == 0) {
     message("No failures logged.")
     return(invisible(NULL))
   }
-
+  
   classify <- function(x) {
     x <- tolower(ifelse(is.na(x), "", x))
     dplyr::case_when(
@@ -382,19 +553,19 @@ summarize_failures <- function(msar_results,
       TRUE ~ "other"
     )
   }
-
+  
   fl <- fl %>% dplyr::mutate(error_type = classify(error))
-
+  
   by_type <- fl %>% dplyr::count(stage, error_type, name = "n", sort = TRUE)
   by_cell <- fl %>%
     dplyr::count(dplyr::across(dplyr::all_of(by)), error_type, name = "n") %>%
     dplyr::arrange(dplyr::desc(n))
-
+  
   cat("=== DISCARDED FITS: reason breakdown ===\n")
   cat(sprintf("Total logged failures: %d\n\n", nrow(fl)))
   print(by_type, n = Inf)
   cat("\nUse $by_cell for the per-condition breakdown, $raw for the full log.\n")
-
+  
   invisible(list(by_type = by_type, by_cell = by_cell, raw = fl))
 }
 
