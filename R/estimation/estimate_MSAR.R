@@ -349,7 +349,8 @@ fit_one_replicate <- function(cell, rep, order, MaxIter, verbose) {
     seq_mapped <- rep(1L, length(true_seq))
   }
   
-  fit_row <- NULL
+  fit_row     <- NULL
+  seq_failure <- NULL  # only set below if the sequence row has to be skipped
   if (length(true_seq) == length(seq_mapped)) {
     fit_row <- tibble::tibble(
       timesteps = cell$timesteps_val, density = cell$density_val,
@@ -360,12 +361,36 @@ fit_one_replicate <- function(cell, rep, order, MaxIter, verbose) {
       est_regime_sequence  = list(seq_mapped)
     )
   } else {
-    message("Skipping fit-level sequence row for ", loc,
-            ": length mismatch (true = ", length(true_seq),
-            ", est = ", length(seq_mapped), ")")
+    # NOTE: this is NOT a failure for Beta_corr/Kappa_corr/Beta_ac_corr_pearson --
+    # regime_rows above is already built and is returned regardless of what
+    # happens here. Only the RQ4 sequence row (fit_row) is unavailable for this
+    # replicate. Logged via the same make_failure() mechanism as fit_null/
+    # zero_var_beta/no_data (previously this branch only printed a message()
+    # and returned failure = NULL, so it was invisible to summarize_failures()
+    # and to every downstream feasibility/sensitivity analysis -- this is what
+    # produced the ~21% "extra", untracked missingness in RQ4 relative to the
+    # corr-outcome failure rate).
+    #
+    # Diagnostic fields (parseable via e.g. stringr::str_match(error,
+    # "smoothedprob_rows=(\\d+)")) let summarize_failures()'s existing by_cell
+    # breakdown show WHERE (which T/N/M/Density) the mismatch concentrates, and
+    # the length comparison shows WHICH side is off: true_seq vs. true_seq_full
+    # (a generation/trimming-side issue) or smoothedprob_rows vs. the T-1
+    # expectation documented in reconstruct_regime_sequence() (an estimation-
+    # side issue, e.g. EM convergence affecting how many rows smoothedprob has).
+    n_smoothed <- if (cell$regimes_val > 1) nrow(model_fit[["smoothedprob"]]) else NA_integer_
+    diag_msg <- sprintf(
+      paste("seq length mismatch: true_seq_full=%d true_seq=%d",
+            "smoothedprob_rows=%s est_seq=%d expected_T_minus_1=%d order=%d"),
+      length(true_seq_full), length(true_seq),
+      if (is.na(n_smoothed)) "NA" else as.character(n_smoothed),
+      length(seq_mapped), cell$timesteps_val - 1L, order
+    )
+    message("Skipping fit-level sequence row for ", loc, ": ", diag_msg)
+    seq_failure <- make_failure("seq_length_mismatch", diag_msg)
   }
   
-  list(regime_rows = regime_rows, fit_row = fit_row, failure = NULL)
+  list(regime_rows = regime_rows, fit_row = fit_row, failure = seq_failure)
 }
 
 # -----------------------------------------------------------------------------
@@ -526,6 +551,12 @@ estimate_MSAR <- function(Density, N, M, T, n_ts, order, MaxIter, verbose, min_e
 #'   \item \code{zero_var_beta}: an estimated Beta had zero variance, so regime
 #'     matching was undefined and the fit was discarded.
 #'   \item \code{no_data}: no simulated series matched the condition (lookup miss).
+#'   \item \code{seq_length_mismatch}: the EM fit and regime matching succeeded
+#'     (so this replicate's regime_rows -- and hence Beta_corr/Kappa_corr/
+#'     Beta_ac_corr_pearson -- are unaffected and already included), but the
+#'     true and reconstructed regime sequences had different lengths, so the
+#'     fit-level sequence row needed for RQ4 could not be built. RQ4-specific
+#'     missingness only; does not reduce the sample for RQ1--RQ3.
 #' }
 #' The near-singular \code{est_Sigma} case is NOT logged here any more -- it is a
 #' per-regime validity flag handled in analysis (\code{sigma_validity_log}).
@@ -544,6 +575,7 @@ summarize_failures <- function(msar_results,
   classify <- function(x) {
     x <- tolower(ifelse(is.na(x), "", x))
     dplyr::case_when(
+      grepl("seq length mismatch", x) ~ "RQ4 sequence-length mismatch (not a fit failure)",
       grepl("singular|rcond|cxx|det\\(|positive.?definite|chol", x) ~ "singular/ill-conditioned covariance",
       grepl("zero variance|sd", x) ~ "degenerate (zero-variance) estimate",
       grepl("nan|non-finite|infinite|\\binf\\b|missing value|na/nan", x) ~ "non-finite / NaN in likelihood",
