@@ -95,6 +95,47 @@ fit_sequence_recovery_model <- function(fit_results) {
               performance::r2_nakagawa(m_primary)$R2_marginal,
               performance::r2_nakagawa(m_primary)$R2_conditional))
 
+  # --- Interaction check: does logT x Regimes matter for RQ4? ----------------
+  # RQ1--3 report a logT x Regimes interaction as a central finding ("T helps
+  # recovery more strongly at higher M"). RQ4 deliberately uses a main-effects-
+  # only LMM (separately justified -- simpler model, Cohen's kappa as a more
+  # holistic outcome than the per-parameter correlations), but a reviewer can
+  # reasonably ask whether that interaction was checked here too rather than
+  # silently skipped because it didn't fit the simpler-model narrative. This
+  # fits a single additional interaction -- not the full 3-way structure used
+  # for RQ1--3 -- and applies the SAME decision rule already used throughout
+  # modeling.R (Delta AIC > 10 favours the more complex model), so RQ4 model
+  # selection stays methodologically consistent with RQ1--3.
+  m_interact <- lmer(
+    cohens_kappa ~ logT * Regimes + Density_s + Nodes_s + (1 | param_set_id),
+    data = seq_results, REML = FALSE,
+    control = lmerControl(optimizer = "bobyqa")
+  )
+  delta_aic_interact <- AIC(m_primary) - AIC(m_interact)  # positive favours interaction model
+  used_interaction    <- delta_aic_interact > 10           # single source of truth, reused below
+
+  cat(sprintf("\nlogT x Regimes interaction check: AIC(main effects) = %.1f, AIC(+ logT x Regimes) = %.1f\n",
+              AIC(m_primary), AIC(m_interact)))
+  cat(sprintf("Delta AIC (main effects vs. + interaction) = %.1f\n", delta_aic_interact))
+
+  if (used_interaction) {
+    m_rq4_primary      <- m_interact
+    rq4_primary_label  <- "Main effects + logT x Regimes (primary)"
+    cat("-> logT x Regimes interaction selected as primary RQ4 model (Delta AIC > 10).\n")
+    cat("\n--- Primary LMM (with interaction): cohens_kappa ~ logT * Regimes + Density_s + Nodes_s + (1|param_set_id) ---\n")
+    print(summary(m_interact)$coefficients)
+    cat(sprintf("\nMarginal R2: %.3f   Conditional R2: %.3f\n",
+                performance::r2_nakagawa(m_interact)$R2_marginal,
+                performance::r2_nakagawa(m_interact)$R2_conditional))
+  } else {
+    m_rq4_primary      <- m_primary
+    rq4_primary_label  <- "Main effects (primary)"
+    cat("-> No evidence for a logT x Regimes interaction (Delta AIC <= 10); main-effects model remains primary.\n")
+    cat(sprintf("   (Note: with n = %d observations, the interaction's own p-value would almost certainly\n", nrow(seq_results)))
+    cat("    be significant regardless of practical relevance -- Delta AIC, not significance, is the\n")
+    cat("    deciding criterion here, for consistency with the RQ1-3 model-selection rule.)\n")
+  }
+
   # --- Secondary: binomial GLMM on accuracy (length-weighted) -----------------
   # An ordinary binomial GLMM on per-fit accuracy is massively overdispersed
   # (Pearson/df ~ 60): sequence-recovery accuracy varies across fits far more
@@ -106,17 +147,30 @@ fit_sequence_recovery_model <- function(fit_results) {
   # the fixed-effect inference (the robustness check we actually care about)
   # valid. The conditional-Pearson overdispersion ratio is recomputed below and
   # should now sit near 1.
+  #
+  # Formula mirrors whichever model won the interaction check above
+  # (used_interaction), so the robustness check always tests the same spec
+  # that ends up reported as primary -- a GLMM without logT x Regimes would
+  # not actually be a robustness check FOR the interaction finding when that
+  # interaction is what's being reported.
+  secondary_formula <- if (used_interaction) {
+    cbind(n_correct, n_incorrect) ~ logT * Regimes + Density_s + Nodes_s +
+      (1 | param_set_id) + (1 | obs_id)
+  } else {
+    cbind(n_correct, n_incorrect) ~ logT + Density_s + Nodes_s + Regimes +
+      (1 | param_set_id) + (1 | obs_id)
+  }
   m_secondary <- tryCatch(
     glmer(
-      cbind(n_correct, n_incorrect) ~ logT + Density_s + Nodes_s + Regimes +
-        (1 | param_set_id) + (1 | obs_id),
+      secondary_formula,
       data = seq_results, family = binomial,
       control = glmerControl(optimizer = "bobyqa")
     ),
     error = function(e) { cat("  Binomial GLMM failed:", e$message, "\n"); NULL }
   )
   if (!is.null(m_secondary)) {
-    cat("\n--- Secondary binomial GLMM on accuracy + OLRE (robustness check) ---\n")
+    cat(sprintf("\n--- Secondary binomial GLMM on accuracy + OLRE (robustness check%s) ---\n",
+                if (used_interaction) ", + logT x Regimes" else ""))
     print(summary(m_secondary)$coefficients)
     # Overdispersion check (Pearson chi-square / residual df). With the OLRE in
     # the model this is the CONDITIONAL ratio: the per-observation random effect
@@ -133,10 +187,26 @@ fit_sequence_recovery_model <- function(fit_results) {
   }
 
   invisible(list(
-    seq_results   = seq_results,
-    empty_model   = m0,
-    icc           = icc0,
-    primary_model = m_primary,
+    seq_results        = seq_results,
+    empty_model        = m0,
+    icc                = icc0,
+    # main_effects_model: always the simple logT + Density_s + Nodes_s + Regimes
+    # spec. Kept separate from primary_model so the secondary GLMM and the
+    # sensitivity refit (run_sequence_sensitivity_analysis) can keep comparing
+    # against this exact spec regardless of which model wins the interaction
+    # check below -- both of those were built around an interaction-free
+    # coefficient set, and extending them to a logT x Regimes term is a
+    # separate decision, not an automatic consequence of this check.
+    main_effects_model = m_primary,
+    interaction_model   = m_interact,
+    delta_aic_interact  = delta_aic_interact,
+    used_interaction    = used_interaction,  # single source of truth for downstream consumers
+    # primary_model/primary_label: whichever of the two above won the Delta
+    # AIC > 10 comparison -- this is what export_sequence_recovery_table()
+    # writes out as "the" RQ4 coefficient table, and what the sensitivity
+    # refit below mirrors via used_interaction.
+    primary_model = m_rq4_primary,
+    primary_label = rq4_primary_label,
     secondary_model = m_secondary
   ))
 }
@@ -181,7 +251,14 @@ run_sequence_sensitivity_analysis <- function(seq_recovery, fit_results,
   }
 
   seq_results   <- seq_recovery$seq_results
-  primary_model <- seq_recovery$primary_model
+  # primary_model here is whichever model fit_sequence_recovery_model() reported
+  # as primary (main effects, or + logT x Regimes if that won Delta AIC > 10).
+  # The refit below mirrors the SAME spec via used_interaction, so Full vs.
+  # Sensitivity stays an apples-to-apples comparison of the model that's
+  # actually reported -- not a comparison against a simpler model nobody is
+  # claiming as the result.
+  primary_model     <- seq_recovery$primary_model
+  used_interaction  <- isTRUE(seq_recovery$used_interaction)
 
   # --- Per-cell combined RQ4 missingness -------------------------------------
   # Build the FULL M>=2 design grid first, so a cell where every replicate
@@ -250,8 +327,9 @@ run_sequence_sensitivity_analysis <- function(seq_recovery, fit_results,
   # --- Exclude high-missingness cells and refit the primary RQ4 LMM ----------
   # Reuse the already-scaled predictors in seq_results (do NOT rescale on the
   # reduced data), exactly as sensitivity.R does, so Full vs. Sensitivity stays
-  # an apples-to-apples coefficient comparison. The fixed/random-effects spec is
-  # identical to the primary LMM in fit_sequence_recovery_model().
+  # an apples-to-apples coefficient comparison. The fixed/random-effects spec
+  # mirrors whichever model fit_sequence_recovery_model() selected as primary
+  # (see used_interaction above).
   excl <- high_fail_conditions %>% select(timesteps, density, nodes, regimes)
   seq_results_sens <- seq_results %>%
     anti_join(excl, by = c("timesteps", "density", "nodes", "regimes"))
@@ -261,8 +339,13 @@ run_sequence_sensitivity_analysis <- function(seq_recovery, fit_results,
   cat(sprintf("Rows removed:             %d\n\n",
               nrow(seq_results) - nrow(seq_results_sens)))
 
+  sens_formula <- if (used_interaction) {
+    cohens_kappa ~ logT * Regimes + Density_s + Nodes_s + (1 | param_set_id)
+  } else {
+    cohens_kappa ~ logT + Density_s + Nodes_s + Regimes + (1 | param_set_id)
+  }
   model_sens <- tryCatch(
-    lmer(cohens_kappa ~ logT + Density_s + Nodes_s + Regimes + (1 | param_set_id),
+    lmer(sens_formula,
          data = seq_results_sens, REML = FALSE,
          control = lmerControl(optimizer = "bobyqa")),
     error = function(e) { cat("  RQ4 sensitivity model failed:", e$message, "\n"); NULL }
