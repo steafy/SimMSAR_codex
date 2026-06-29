@@ -51,13 +51,15 @@ fit_outcome_models <- function(outcome, dat_sim, weight_col = NULL) {
   outcome_z <- paste0(outcome, "_z")
 
   # Precision weights (see aggregate_to_sim_level()): NULL for outcomes
-  # without an analogous true-edge count (e.g. Beta_ac_corr), in which case
-  # fit_lmer()'s weights=NULL default reproduces the original unweighted fit.
-  # Normalized to mean 1: lmer's fixed-effect estimates are invariant to a
-  # global rescaling of weights, but the residual-variance scale (and hence
-  # ICC, R2_nakagawa) is NOT -- raw w_Beta/w_Kappa run into the hundreds for
-  # some rows, which inflated residual variance ~30x and likely destabilized
-  # the optimizer (observed: "negative eigenvalue" convergence warning).
+  # without an analogous true-edge count (e.g. Beta_corr -- unweighted at
+  # both the regime-aggregation and LMM level as of 2026-06-29, see
+  # transform.R), in which case fit_lmer()'s weights=NULL default reproduces
+  # the original unweighted fit. Normalized to mean 1: lmer's fixed-effect
+  # estimates are invariant to a global rescaling of weights, but the
+  # residual-variance scale (and hence ICC, R2_nakagawa) is NOT -- raw
+  # w_Kappa/w_BetaAC run into the hundreds for some rows, which inflated
+  # residual variance ~30x and likely destabilized the optimizer (observed:
+  # "negative eigenvalue" convergence warning).
   w <- if (!is.null(weight_col)) dat_sim[[weight_col]] / mean(dat_sim[[weight_col]]) else NULL
 
   cat("Fitting models for:", outcome, "\n")
