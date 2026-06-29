@@ -96,8 +96,10 @@ corr_results <- add_fisher_z(corr_results, corr_cols)
 agg     <- aggregate_to_sim_level(corr_results, corr_cols)
 dat_sim <- agg$dat_sim
 
-# PART 3.1: Descriptive statistics
-descript_stats <- descriptive_stats(dat_sim, corr_cols, agg$available_other_metrics)
+# PART 3.1: Descriptive statistics (incl. RQ4 regime-sequence recovery rows,
+# computed from the fit-level table attached by estimate_MSAR()).
+descript_stats <- descriptive_stats(dat_sim, corr_cols, agg$available_other_metrics,
+                                    attr(MSAR_dynamics_list, "fit_results"))
 
 # PART 4: Transform & scale predictors; attach success rates
 dat_sim <- scale_predictors(dat_sim, est$selection_weights)

@@ -4,7 +4,11 @@
 # Extracted from the former monolithic stat_analysis.R (PART 3.1).
 
 # Returns list(table = descriptive_stats_table) and writes HTML/LaTeX tables.
-descriptive_stats <- function(dat_sim, corr_cols, available_other_metrics) {
+# fit_results (optional): the fit-level table attached by estimate_MSAR(); if
+# supplied, two regime-sequence recovery rows (accuracy + Cohen's kappa, RQ4)
+# are appended, computed on the regimes >= 2 fits.
+descriptive_stats <- function(dat_sim, corr_cols, available_other_metrics,
+                              fit_results = NULL) {
   
   descriptive_stats_table <- data.frame(
     Metric = character(),
@@ -68,6 +72,36 @@ descriptive_stats <- function(dat_sim, corr_cols, available_other_metrics) {
     }
   }
   
+  # 3. REGIME-SEQUENCE RECOVERY (RQ4): per-fit accuracy and Cohen's kappa from
+  # the fit-level table (regimes >= 2 only). Each fit is one simulated series, so
+  # this is the same simulation-level unit as the aggregation above; the metrics
+  # are on their original scale (no Fisher-z), like the "other metrics" block.
+  if (!is.null(fit_results)) {
+    seq_df <- prepare_sequence_results(fit_results)
+    if (nrow(seq_df) > 0) {
+      seq_metrics <- list(Seq_accuracy = seq_df$accuracy,
+                          Seq_kappa    = seq_df$cohens_kappa)
+      for (nm in names(seq_metrics)) {
+        v <- seq_metrics[[nm]]
+        descriptive_stats_table <- rbind(
+          descriptive_stats_table,
+          data.frame(
+            Metric = nm,
+            Mean = round(mean(v, na.rm = TRUE), 2),
+            TrimMean = round(mean(v, trim = 0.05, na.rm = TRUE), 2),
+            SD = round(sd(v, na.rm = TRUE), 2),
+            Median = round(median(v, na.rm = TRUE), 2),
+            Min = round(min(v, na.rm = TRUE), 2),
+            Max = round(max(v, na.rm = TRUE), 2),
+            Range = round(max(v, na.rm = TRUE) - min(v, na.rm = TRUE), 2),
+            N = sum(!is.na(v)),
+            stringsAsFactors = FALSE
+          )
+        )
+      }
+    }
+  }
+
   # Order rows by outcome block (not by metric type): first the temporal
   # network Beta (correlation, MAE, sensitivity, specificity), then the average
   # controllability of Beta, then the contemporaneous network Kappa. Metrics not
@@ -75,7 +109,8 @@ descriptive_stats <- function(dat_sim, corr_cols, available_other_metrics) {
   metric_order <- c(
     "Beta_corr", "NRMSE_Beta", "Beta_sen", "Beta_spec",   # Beta block
     "Beta_ac_corr_pearson", "Beta_ac_corr_spearman",      # AC(Beta) block (both variants)
-    "Kappa_corr", "NRMSE_Kappa", "Kappa_sen", "Kappa_spec"  # Kappa block
+    "Kappa_corr", "NRMSE_Kappa", "Kappa_sen", "Kappa_spec",  # Kappa block
+    "Seq_accuracy", "Seq_kappa"                              # regime-sequence recovery (RQ4)
   )
   descriptive_stats_table <- descriptive_stats_table[
     order(match(descriptive_stats_table$Metric, metric_order)), , drop = FALSE
@@ -88,7 +123,9 @@ descriptive_stats <- function(dat_sim, corr_cols, available_other_metrics) {
   
   cat("Note: Correlation metrics aggregated on Fisher-z scale (consistent with\n")
   cat("      regression analysis), then back-transformed to r-scale. Other metrics\n")
-  cat("      aggregated on original scale. All aggregation at simulation level.\n\n")
+  cat("      (incl. regime-sequence accuracy / Cohen's kappa) aggregated on original\n")
+  cat("      scale. All aggregation at simulation level; sequence-recovery rows use\n")
+  cat("      the regimes >= 2 fits only.\n\n")
   
   # Create formatted tables
   if (require("kableExtra", quietly = TRUE)) {
@@ -113,16 +150,18 @@ descriptive_stats <- function(dat_sim, corr_cols, available_other_metrics) {
     # carry the network as a subscript. Applied only to the .tex export so
     # console and HTML keep the readable raw names. Requires \usepackage{amsmath}.
     tex_metric_labels <- c(
-      Beta_corr    = "$r_{\\text{Beta}}$",
-      NRMSE_Beta   = "$\\text{NRMSE}_{\\text{Beta}}$",
-      Beta_sen     = "$\\text{Sens}_{\\text{Beta}}$",
-      Beta_spec    = "$\\text{Spec}_{\\text{Beta}}$",
-      Beta_ac_corr_pearson  = "$r_{\\text{AC, Pearson}}$",
-      Beta_ac_corr_spearman = "$r_{\\text{AC, Spearman}}$",
-      Kappa_corr   = "$r_{\\text{Kappa}}$",
-      NRMSE_Kappa  = "$\\text{NRMSE}_{\\text{Kappa}}$",
-      Kappa_sen    = "$\\text{Sens}_{\\text{Kappa}}$",
-      Kappa_spec   = "$\\text{Spec}_{\\text{Kappa}}$"
+      Beta_corr    = "$r_{\\boldsymbol{A}}$",
+      NRMSE_Beta   = "$\\text{NRMSE}_{\\boldsymbol{A}}$",
+      Beta_sen     = "$\\text{Sens}_{\\boldsymbol{A}}$",
+      Beta_spec    = "$\\text{Spec}_{\\boldsymbol{A}}$",
+      Beta_ac_corr_pearson  = "$r_{\\boldsymbol{ac}}$",
+      Beta_ac_corr_spearman = "$r_{\\boldsymbol{ac},\\,\\text{S}}$",
+      Kappa_corr   = "$r_{\\boldsymbol{K}}$",
+      NRMSE_Kappa  = "$\\text{NRMSE}_{\\boldsymbol{K}}$",
+      Kappa_sen    = "$\\text{Sens}_{\\boldsymbol{K}}$",
+      Kappa_spec   = "$\\text{Spec}_{\\boldsymbol{K}}$",
+      Seq_accuracy = "$\\text{Acc}$",
+      Seq_kappa    = "$\\kappa$"
     )
     descriptive_stats_tex <- descriptive_stats_formatted
     mapped <- tex_metric_labels[descriptive_stats_tex$Metric]
