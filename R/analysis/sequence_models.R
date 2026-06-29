@@ -38,6 +38,12 @@ prepare_sequence_results <- function(fit_results) {
     ungroup() %>%
     mutate(
       param_set_id = interaction(density, nodes, regimes, ts_id, drop = TRUE),
+      # Observation-level random effect (OLRE): one unique level per fit. Added
+      # as a grouping factor here so the secondary binomial GLMM can carry a
+      # (1|obs_id) term, which absorbs the heavy extra-binomial overdispersion
+      # (length-weighted accuracy is far more variable across fits than a pure
+      # binomial allows). See fit_sequence_recovery_model() for the rationale.
+      obs_id    = factor(dplyr::row_number()),
       logT      = as.numeric(scale(log(timesteps))),
       Density_s = as.numeric(scale(density)),
       Nodes_s   = as.numeric(scale(nodes)),
@@ -90,25 +96,39 @@ fit_sequence_recovery_model <- function(fit_results) {
               performance::r2_nakagawa(m_primary)$R2_conditional))
 
   # --- Secondary: binomial GLMM on accuracy (length-weighted) -----------------
+  # An ordinary binomial GLMM on per-fit accuracy is massively overdispersed
+  # (Pearson/df ~ 60): sequence-recovery accuracy varies across fits far more
+  # than a binomial with these large n_total values permits, so the binomial SEs
+  # are anti-conservative. Rather than switch outcome family, we add an
+  # observation-level random effect (1|obs_id) -- one latent normal deviate per
+  # fit -- which is the standard lme4 remedy for binomial overdispersion: it
+  # soaks up the extra-binomial variance into a quantified random term, leaving
+  # the fixed-effect inference (the robustness check we actually care about)
+  # valid. The conditional-Pearson overdispersion ratio is recomputed below and
+  # should now sit near 1.
   m_secondary <- tryCatch(
     glmer(
-      cbind(n_correct, n_incorrect) ~ logT + Density_s + Nodes_s + Regimes + (1 | param_set_id),
+      cbind(n_correct, n_incorrect) ~ logT + Density_s + Nodes_s + Regimes +
+        (1 | param_set_id) + (1 | obs_id),
       data = seq_results, family = binomial,
       control = glmerControl(optimizer = "bobyqa")
     ),
     error = function(e) { cat("  Binomial GLMM failed:", e$message, "\n"); NULL }
   )
   if (!is.null(m_secondary)) {
-    cat("\n--- Secondary binomial GLMM on accuracy (robustness check) ---\n")
+    cat("\n--- Secondary binomial GLMM on accuracy + OLRE (robustness check) ---\n")
     print(summary(m_secondary)$coefficients)
-    # Quick overdispersion check (Pearson chi-square / residual df).
+    # Overdispersion check (Pearson chi-square / residual df). With the OLRE in
+    # the model this is the CONDITIONAL ratio: the per-observation random effect
+    # has absorbed the extra-binomial variance, so a value near 1 indicates the
+    # remaining residual dispersion is well-behaved.
     rdf <- df.residual(m_secondary)
     od  <- sum(residuals(m_secondary, type = "pearson")^2) / rdf
-    cat(sprintf("Overdispersion ratio: %.2f", od))
+    cat(sprintf("Overdispersion ratio (with OLRE): %.2f", od))
     if (od > 1.5) {
-      cat("  (>1.5: consider an observation-level random effect rather than switching outcome)\n")
+      cat("  (still >1.5: residual overdispersion remains beyond the OLRE)\n")
     } else {
-      cat("  (acceptable)\n")
+      cat("  (acceptable -- OLRE absorbed the overdispersion)\n")
     }
   }
 
