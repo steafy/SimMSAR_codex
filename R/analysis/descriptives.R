@@ -106,7 +106,7 @@ descriptive_stats <- function(dat_sim, corr_cols, available_other_metrics) {
             format = "html",
             align = c("l", rep("r", 8))) %>%
       kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
-      save_kable(file = "descriptive_statistics_table.html")
+      save_kable(file = results_file("descriptive_statistics_table.html"))
     
     # LaTeX table: map the Metric column to math labels (subscript-per-row).
     # Recovery correlations use r_<network>; NRMSE/Sensitivity/Specificity
@@ -135,7 +135,7 @@ descriptive_stats <- function(dat_sim, corr_cols, available_other_metrics) {
       xtable(descriptive_stats_tex,
              caption = "Descriptive Statistics (Simulation-Level, z-aggregated)",
              digits = c(0, 0, 3, 3, 3, 3, 3, 3, 3, 0)),
-      file = "descriptive_statistics_table.tex",
+      file = results_file("descriptive_statistics_table.tex"),
       include.rownames = FALSE,
       sanitize.text.function = identity
     )

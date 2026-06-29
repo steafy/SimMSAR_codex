@@ -137,12 +137,12 @@ fit_feasibility_model <- function(failure_analysis) {
                          "as a function of the design factors (", fam, ")."),
         digits = c(0, 0, 3, 3, 3, 3, 0, 0)
       ),
-      file = "feasibility_model.tex",
+      file = results_file("feasibility_model.tex"),
       include.rownames = FALSE,
       sanitize.colnames.function = identity,
       sanitize.text.function = identity
     )
-    cat("Exported: feasibility_model.tex\n\n")
+    cat("Exported:", results_file("feasibility_model.tex"), "\n\n")
   }
 
   list(model = model, coef_table = coef_table, family = fam)

@@ -119,7 +119,7 @@ make_line_plots <- function(corr_results, cols) {
         panel.spacing = unit(0.15, "in")
       )
 
-    output_file <- paste0("Plots/", col_name, "_plot_with_labels.pdf")
+    output_file <- plots_file(paste0(col_name, "_plot_with_labels.pdf"))
 
     # cairo_pdf instead of the default pdf() device: the base device's font-
     # metric calculation assumes a single-byte locale and mangles multi-byte
@@ -213,7 +213,7 @@ make_senspec_plots <- function(corr_results) {
         panel.spacing = unit(0.15, "in")
       )
 
-    output_file <- paste0("Plots/", net, "_senspec_plot_with_labels.pdf")
+    output_file <- plots_file(paste0(net, "_senspec_plot_with_labels.pdf"))
 
     ggsave(
       filename = output_file,
@@ -314,7 +314,7 @@ make_coefficient_plots <- function(all_results, corr_cols) {
       panel.grid.minor = element_blank()
     )
 
-  ggsave("Plots/coefficient_plot_full.pdf",
+  ggsave(plots_file("coefficient_plot_full.pdf"),
          plot = p_coef_full, device = cairo_pdf, width = 10, height = 14, dpi = 600)
 
   # --- 8.2: Main effects only (compact version for main text) ---
@@ -341,8 +341,8 @@ make_coefficient_plots <- function(all_results, corr_cols) {
       panel.grid.minor = element_blank()
     )
 
-  ggsave("Plots/coefficient_plot_main_effects.pdf",
+  ggsave(plots_file("coefficient_plot_main_effects.pdf"),
          plot = p_coef_main, device = cairo_pdf, width = 8, height = 5, dpi = 600)
 
-  message("Coefficient plots saved to Plots/")
+  message("Coefficient plots saved to ", PLOTS_DIR)
 }

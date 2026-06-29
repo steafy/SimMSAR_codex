@@ -59,7 +59,7 @@ export_coefficient_tables <- function(all_results, corr_cols) {
           format = "html",
           row.names = FALSE) %>%
       kable_styling(bootstrap_options = c("striped", "hover")) %>%
-      save_kable(file = paste0(file_base, ".html"))
+      save_kable(file = results_file(paste0(file_base, ".html")))
 
     # Export to LaTeX (digits=3)
     print(
@@ -67,11 +67,11 @@ export_coefficient_tables <- function(all_results, corr_cols) {
              caption = paste0(model_label, ": ", outcome, " (Mixed Effects)"),
              digits = 3,
              row.names = FALSE),
-      file = paste0(file_base, ".tex"),
+      file = results_file(paste0(file_base, ".tex")),
       include.rownames = FALSE
     )
 
-    cat("Exported results for", outcome, "(", model_label, ")\n")
+    cat("Exported results for", outcome, "(", model_label, ") to", RESULTS_DIR, "\n")
   }
 }
 
@@ -229,8 +229,9 @@ export_comparison_table <- function(all_results, corr_cols) {
     "\\end{table}"
   )
 
-  writeLines(tex_out, "comparison_all.tex")
-  cat("Exported: comparison_all.tex\n\n")
+  comparison_tex <- results_file("comparison_all.tex")
+  writeLines(tex_out, comparison_tex)
+  cat("Exported:", comparison_tex, "\n\n")
 
   comparison_all
 }
@@ -242,7 +243,8 @@ export_diagnostics_pdf <- function(all_results, corr_cols) {
 
   cat("\nGenerating diagnostic plots...\n")
 
-  pdf("diagnostics_all_models_mixed.pdf", width = 12, height = 10)
+  diag_pdf <- plots_file("diagnostics_all_models_mixed.pdf")
+  pdf(diag_pdf, width = 12, height = 10)
 
   for (outcome in corr_cols) {
     model <- all_results[[outcome]]$primary_model
@@ -281,5 +283,5 @@ export_diagnostics_pdf <- function(all_results, corr_cols) {
 
   dev.off()
 
-  cat("Diagnostic plots saved to: diagnostics_all_models_mixed.pdf\n\n")
+  cat("Diagnostic plots saved to:", diag_pdf, "\n\n")
 }

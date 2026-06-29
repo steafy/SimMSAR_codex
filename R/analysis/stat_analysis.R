@@ -32,6 +32,7 @@ for (pkg in required_packages) {
 # -----------------------------------------------------------------------------
 # Load analysis modules
 # -----------------------------------------------------------------------------
+source("R/analysis/output_paths.R")   # results_file()/plots_file(): output/results, output/plots
 source("R/analysis/data_prep.R")      # PART 1: scoring, data prep + selection-bias reporting
 source("R/analysis/feasibility.R")    # PART 1.4: feasibility (convergence) model
 source("R/analysis/transform.R")      # PART 2-4: Fisher-z, aggregation, scaling
