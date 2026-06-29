@@ -48,12 +48,11 @@ aggregate_to_sim_level <- function(corr_results, corr_cols) {
   z_cols <- paste0(corr_cols, "_z")
   
   # Precision-weighting: outcomes computed from very few TRUE non-zero edges
-  # (n_nz_Beta / n_nz_Kappa, added in prepare_corr_results()) have a Pearson r
-  # that is mechanically forced toward |r|=1, regardless of estimation quality.
+  # (n_nz_Kappa, added in prepare_corr_results()) have a Pearson r that is
+  # mechanically forced toward |r|=1, regardless of estimation quality.
   # Weight = pmax(n_nz - 3, 1), the standard Fisher-z sampling-variance weight
   # (Var(z) ~ 1/(n-3)), floored at 1 so n_nz in {2,3,4} doesn't go <=0.
   # Alternative if more differentiation at small n_nz is wanted: weight = n_nz.
-  # Scoped to Beta_corr/Kappa_corr (per discussion).
   #
   # Beta_ac_corr_pearson has the analogous artifact, but with a different
   # "n": it correlates the AC vector across Nodes (4/6/8), not across edges, so
@@ -61,8 +60,22 @@ aggregate_to_sim_level <- function(corr_results, corr_cols) {
   # pilot run showed 1.5% |z|>5 for Pearson AC (vs. 18.1% for the now-dropped
   # Spearman variant -- discreteness at N=4 makes rank correlation collapse
   # onto a handful of values regardless of estimation quality).
-  weighted_outcomes <- c(Beta_corr = "weight_Beta", Kappa_corr = "weight_Kappa",
-                        Beta_ac_corr_pearson = "weight_BetaAC")
+  #
+  # Beta_corr is deliberately NOT weighted (was, until 2026-06-29; see git
+  # history). This now matches modeling.R's OUTCOME_WEIGHT_MAP, which already
+  # excluded Beta_corr from LMM-level weighting on the documented grounds that
+  # the full N x N matrix gives it enough degrees of freedom -- but the
+  # regime-level aggregation here used to weight it anyway, which was an
+  # unresolved code/text inconsistency. Checked empirically (regime-level mean
+  # |Beta_corr_z| by Density x Nodes cell): the lowest-n_nz cell (Density=0.25,
+  # Nodes=4, n_nz~4) had the LOWEST mean |z| in the design, not the highest --
+  # the opposite of what the "few true edges forces r toward 1" mechanism
+  # predicts. What the cross-tabulation actually shows is a real (if small,
+  # see the I(Density_s^2) check in modeling.R) Density recovery effect, which
+  # a precision weight would suppress/misrepresent rather than correctly
+  # reflect. Both levels (LMM and regime-aggregation) are now unweighted for
+  # Beta_corr, not just one.
+  weighted_outcomes <- c(Kappa_corr = "weight_Kappa", Beta_ac_corr_pearson = "weight_BetaAC")
   weighted_z_cols   <- paste0(names(weighted_outcomes), "_z")
   
   # Convert factors to numeric for aggregation
@@ -72,7 +85,6 @@ aggregate_to_sim_level <- function(corr_results, corr_cols) {
       Density_num = as.numeric(as.character(Density)),
       Nodes_num = as.numeric(as.character(Nodes)),
       Regimes_num = as.numeric(as.character(Regimes)),
-      weight_Beta   = pmax(n_nz_Beta - 3, 1),
       weight_Kappa  = pmax(n_nz_Kappa - 3, 1),
       weight_BetaAC = pmax(Nodes_num - 3, 1)
     )
@@ -103,12 +115,15 @@ aggregate_to_sim_level <- function(corr_results, corr_cols) {
     group_by(SimUID, Condition, SimID,
              Timesteps_num, Density_num, Nodes_num, Regimes_num) %>%
     summarise(
-      Beta_corr_z            = safe_atanh(stats::weighted.mean(Beta_corr,           w = weight_Beta,   na.rm = TRUE)),
+      # Beta_corr: unweighted mean on the raw scale, then atanh once -- same
+      # "average-raw-first" principle as the weighted outcomes below (see the
+      # 2026-06-28 fix note above this block), just without a precision
+      # weight, per the rationale in the comment above weighted_outcomes.
+      Beta_corr_z            = safe_atanh(mean(Beta_corr, na.rm = TRUE)),
       Kappa_corr_z           = safe_atanh(stats::weighted.mean(Kappa_corr,          w = weight_Kappa,  na.rm = TRUE)),
       Beta_ac_corr_pearson_z = safe_atanh(stats::weighted.mean(Beta_ac_corr_pearson, w = weight_BetaAC, na.rm = TRUE)),
       across(all_of(plain_z_cols), \(x) mean(x, na.rm = TRUE), .names = "{.col}"),
-      w_Beta   = sum(weight_Beta,   na.rm = TRUE),
-      w_Kappa  = sum(weight_Kappa,  na.rm = TRUE),
+      w_Kappa = sum(weight_Kappa[!is.na(Kappa_corr)], na.rm = TRUE),
       w_BetaAC = sum(weight_BetaAC, na.rm = TRUE),
       .groups = "drop"
     ) %>%
