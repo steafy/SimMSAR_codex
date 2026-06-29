@@ -129,6 +129,7 @@ seq_sens <- run_sequence_sensitivity_analysis(
 export_coefficient_tables(all_results, corr_cols)
 comparison_all <- export_comparison_table(all_results, corr_cols)
 export_diagnostics_pdf(all_results, corr_cols)
+export_sequence_recovery_table(seq_recovery)  # RQ4 -- was previously console-only
 
 # PART 7: Visualisations
 make_line_plots(corr_results, corr_cols)
