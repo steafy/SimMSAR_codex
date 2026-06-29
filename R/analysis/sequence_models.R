@@ -140,3 +140,159 @@ fit_sequence_recovery_model <- function(fit_results) {
     secondary_model = m_secondary
   ))
 }
+
+# =============================================================================
+# RQ4 sensitivity analysis: exclude high-missingness conditions (>10%)
+# =============================================================================
+# Mirror of run_sensitivity_analysis() (sensitivity.R) for the regime-sequence
+# recovery LMM. The question is identical -- do MNAR estimation failures bias the
+# reported recovery estimates? -- but the relevant missingness differs from the
+# correlation outcomes', so it is recomputed here rather than reusing
+# bias$high_fail_conditions (which is built from the corr-outcome failures only):
+#
+#   * For Beta_corr/Kappa_corr/Beta_ac the unit is a per-REGIME row (regime_rows);
+#     a fit is "missing" if estimation failed (fit_null / zero_var_beta / no_data).
+#   * For RQ4 the unit is a per-FIT row (fit_results), absent under ANY of those
+#     same estimation failures AND under seq_length_mismatch (the EM fit + regime
+#     matching succeeded, but the true and reconstructed regime sequences had
+#     different lengths, so no fit-level sequence row could be built). Either
+#     removes a replicate from the RQ4 sample, so the per-cell RQ4 missingness is
+#     the COMBINED set. Because the four mechanisms are mutually exclusive per
+#     replicate (fit_one_replicate returns at the first one it hits), a missing
+#     fit_results row corresponds to exactly one of them -- so the combined
+#     missingness is measured directly as (n_ts - number of fit_results rows) per
+#     design cell, with no need to parse the failure log to DEFINE it. The log is
+#     used only to ATTRIBUTE that missingness by stage (printed below), which in
+#     particular makes the seq_length_mismatch contribution explicit.
+#
+# Exclusion threshold (>10% per cell, fail_threshold) and the Full-vs-Sensitivity
+# coefficient comparison match sensitivity.R so the two slot together in the
+# pipeline's reporting.
+run_sequence_sensitivity_analysis <- function(seq_recovery, fit_results,
+                                              failure_log, n_ts_per_condition,
+                                              fail_threshold = 0.10) {
+
+  cat("\n=== RQ4 SENSITIVITY ANALYSIS: regime-sequence recovery ===\n\n")
+
+  if (is.null(seq_recovery) || is.null(seq_recovery$seq_results) ||
+      nrow(seq_recovery$seq_results) == 0) {
+    cat("No RQ4 model available (no regimes >= 2 fits); skipping.\n\n")
+    return(NULL)
+  }
+
+  seq_results   <- seq_recovery$seq_results
+  primary_model <- seq_recovery$primary_model
+
+  # --- Per-cell combined RQ4 missingness -------------------------------------
+  # Build the FULL M>=2 design grid first, so a cell where every replicate
+  # failed (zero fit_results rows) still appears as 100% missing rather than
+  # being silently absent from a plain count().
+  reg_levels <- sort(unique(fit_results$regimes[fit_results$regimes >= 2]))
+  grid <- expand.grid(
+    timesteps = sort(unique(fit_results$timesteps)),
+    density   = sort(unique(fit_results$density)),
+    nodes     = sort(unique(fit_results$nodes)),
+    regimes   = reg_levels,
+    KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE
+  )
+  cell_counts <- fit_results %>%
+    filter(regimes >= 2) %>%
+    count(timesteps, density, nodes, regimes, name = "n_fits")
+
+  rq4_failures <- grid %>%
+    left_join(cell_counts, by = c("timesteps", "density", "nodes", "regimes")) %>%
+    mutate(
+      n_fits       = dplyr::coalesce(n_fits, 0L),
+      expected_n   = n_ts_per_condition,
+      failures     = expected_n - n_fits,
+      failure_rate = failures / expected_n
+    ) %>%
+    arrange(desc(failure_rate))
+
+  # --- Attribute the combined missingness by stage (transparency) ------------
+  # Confirms WHICH mechanisms drive the RQ4 attrition and, in particular, makes
+  # the seq_length_mismatch contribution explicit (it has been 0 in practice --
+  # the fit-level sequence guard in estimate_MSAR() never fired across the runs).
+  if (!is.null(failure_log) && nrow(failure_log) > 0) {
+    fl_rq4    <- failure_log %>% filter(regimes >= 2)
+    stage_tab <- sort(table(fl_rq4$stage), decreasing = TRUE)
+    cat(sprintf("Combined RQ4 missingness: %d fits removed of %d expected (%.2f%%).\n",
+                sum(rq4_failures$failures), sum(rq4_failures$expected_n),
+                100 * sum(rq4_failures$failures) / sum(rq4_failures$expected_n)))
+    if (length(stage_tab) > 0) {
+      cat("  By stage: ",
+          paste(names(stage_tab), as.integer(stage_tab), sep = "=", collapse = ", "),
+          "\n", sep = "")
+    }
+    if (!"seq_length_mismatch" %in% names(stage_tab)) {
+      cat("  (seq_length_mismatch = 0: the fit-level sequence guard never fired.)\n")
+    }
+    cat("\n")
+  }
+
+  high_fail_conditions <- rq4_failures %>%
+    filter(failure_rate > fail_threshold) %>%
+    select(timesteps, density, nodes, regimes, failures, failure_rate)
+
+  if (nrow(high_fail_conditions) == 0) {
+    cat(sprintf(paste0("No condition exceeded the %.0f%% combined-missingness ",
+                       "threshold; no RQ4 sensitivity refit needed.\n\n"),
+                100 * fail_threshold))
+    return(invisible(list(rq4_failures = rq4_failures,
+                          high_fail_conditions = high_fail_conditions)))
+  }
+
+  cat(sprintf("Excluded conditions (>%.0f%% combined missingness):\n",
+              100 * fail_threshold))
+  print(as.data.frame(high_fail_conditions), row.names = FALSE)
+  cat("\n")
+
+  # --- Exclude high-missingness cells and refit the primary RQ4 LMM ----------
+  # Reuse the already-scaled predictors in seq_results (do NOT rescale on the
+  # reduced data), exactly as sensitivity.R does, so Full vs. Sensitivity stays
+  # an apples-to-apples coefficient comparison. The fixed/random-effects spec is
+  # identical to the primary LMM in fit_sequence_recovery_model().
+  excl <- high_fail_conditions %>% select(timesteps, density, nodes, regimes)
+  seq_results_sens <- seq_results %>%
+    anti_join(excl, by = c("timesteps", "density", "nodes", "regimes"))
+
+  cat(sprintf("Rows in full seq_results: %d\n", nrow(seq_results)))
+  cat(sprintf("Rows after exclusion:     %d\n", nrow(seq_results_sens)))
+  cat(sprintf("Rows removed:             %d\n\n",
+              nrow(seq_results) - nrow(seq_results_sens)))
+
+  model_sens <- tryCatch(
+    lmer(cohens_kappa ~ logT + Density_s + Nodes_s + Regimes + (1 | param_set_id),
+         data = seq_results_sens, REML = FALSE,
+         control = lmerControl(optimizer = "bobyqa")),
+    error = function(e) { cat("  RQ4 sensitivity model failed:", e$message, "\n"); NULL }
+  )
+  if (is.null(model_sens)) return(NULL)
+
+  # Compare primary (Full) vs. sensitivity coefficients
+  coef_full <- fixef(primary_model)
+  coef_sens <- fixef(model_sens)
+  common    <- intersect(names(coef_full), names(coef_sens))
+
+  comparison <- data.frame(
+    Predictor   = common,
+    Full        = round(coef_full[common], 4),
+    Sensitivity = round(coef_sens[common], 4),
+    Delta       = round(coef_sens[common] - coef_full[common], 4),
+    Delta_pct   = round(100 * (coef_sens[common] - coef_full[common]) /
+                          ifelse(abs(coef_full[common]) < 1e-10, NA, coef_full[common]), 1),
+    row.names   = NULL
+  )
+
+  cat("Outcome: cohens_kappa (RQ4 regime-sequence recovery)\n")
+  cat(strrep("-", 70), "\n")
+  print(comparison, row.names = FALSE)
+  cat("\nDelta = Sensitivity - Full. Large |Delta| or |Delta_pct| indicate bias.\n\n")
+
+  invisible(list(
+    model                = model_sens,
+    comparison           = comparison,
+    high_fail_conditions = high_fail_conditions,
+    rq4_failures         = rq4_failures
+  ))
+}

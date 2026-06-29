@@ -111,6 +111,17 @@ sens_results <- run_sensitivity_analysis(dat_sim, all_results, corr_cols, bias)
 # fit-level table attached by estimate_MSAR().
 seq_recovery <- fit_sequence_recovery_model(attr(MSAR_dynamics_list, "fit_results"))
 
+# PART 5.65: RQ4 sensitivity analysis -- robustness of the recovery LMM to the
+# COMBINED missingness (estimation failures + seq_length_mismatch). Recomputed
+# from the fit-level table rather than reusing the corr-outcome failure set,
+# since RQ4's missingness mechanism differs (see run_sequence_sensitivity_analysis).
+seq_sens <- run_sequence_sensitivity_analysis(
+  seq_recovery,
+  attr(MSAR_dynamics_list, "fit_results"),
+  attr(MSAR_dynamics_list, "failure_log"),
+  est$n_ts_per_condition
+)
+
 # PART 6: Export results
 export_coefficient_tables(all_results, corr_cols)
 comparison_all <- export_comparison_table(all_results, corr_cols)
