@@ -140,19 +140,24 @@ mstep_hh_reduct_msar <-
       
       for (id in 1:d) {
         wi = which(A.th[id, ] != 0)
+        # Complement of wi WITHOUT the `-wi` idiom: when wi is empty (a node with
+        # NO incoming edges -- now possible with genuinely sparse LASSO supports),
+        # `-wi` is `-integer(0)` which selects NOTHING, not everything, causing a
+        # "replacement has length zero" crash. Build the complement explicitly.
+        noti = if (length(wi) > 0) seq_len(d)[-wi] else seq_len(d)
         for (jd in 1:d) {
           cnt = cnt + 1
-          
+
           #
-          # patch: protect length 0 error 
-          
+          # patch: protect length 0 error
+
           if (length(wi) > 0)
           {
             A[cnt, lwi + (1:length(wi))] = Cxx[jd, wi]
           }
           if (d - length(wi) > 0)
           {
-            A[cnt, lA + lwj + (1:(d - length(wi)))] = -S.th[-wi, jd] / 2
+            A[cnt, lA + lwj + (1:(d - length(wi)))] = -S.th[noti, jd] / 2
           }
         }
         lwj = lwj + (d - length(wi))

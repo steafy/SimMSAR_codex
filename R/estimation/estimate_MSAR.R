@@ -35,6 +35,16 @@
 #'   hyperthreading on logical cores typically buys only a modest amount of
 #'   extra throughput. Pass \code{workers = 1} to fall back to fully sequential
 #'   execution (e.g. for debugging or a sanity-check comparison run).
+#' @param lasso_control Optional named list of \code{simmsar_lasso_*} options
+#'   controlling the LASSO first-M-step engine (see
+#'   \code{docs/MSTEP_LASSO_CV_PENALIZATION.md} and
+#'   \code{R/estimation/mstep_hh_lasso_msar.R}). It is applied via
+#'   \code{options()} \emph{inside each worker} (options do not propagate to
+#'   future workers), so it is the correct way to configure the penalization for
+#'   a parallel run. \code{NULL} (default) leaves the library defaults in force
+#'   (\code{engine="bic"}, i.e. the legacy lars+BIC step). Build it in the
+#'   calling script, e.g. \code{list(simmsar_lasso_engine = "cvglmnet",
+#'   simmsar_lasso_reselect = TRUE)}.
 #'
 #' @return An \code{msar_results} tibble with \strong{one row per regime per
 #'   successfully fitted time series} and only the raw quantities:
@@ -399,10 +409,21 @@ fit_one_replicate <- function(cell, rep, order, MaxIter, verbose) {
 # (not per replicate): cheap after the first call on a given persistent
 # worker, so doing it at the cell level rather than the replicate level
 # saves nothing functionally but keeps the call site singular and obvious.
-fit_one_cell <- function(cell, order, MaxIter, verbose, progress_fun = NULL) {
-  
+fit_one_cell <- function(cell, order, MaxIter, verbose, progress_fun = NULL,
+                         lasso_control = NULL) {
+
   ensure_worker_packages()
-  
+
+  # Apply the LASSO / penalization options INSIDE the worker process. options()
+  # are process-level state and are NOT exported to future workers, so setting
+  # them in the calling (main) process would have no effect on the parallel
+  # fits -- they must be (re)applied here, in the worker, before any fit_msar
+  # call. lasso_control is a named list of simmsar_lasso_* options built by the
+  # caller (see estimate_MSAR() / MSAR_ts_analysis_NHMSAR.R).
+  if (!is.null(lasso_control) && length(lasso_control) > 0) {
+    do.call(options, lasso_control)
+  }
+
   regime_list  <- vector("list", length(cell$replicates))
   fit_list     <- vector("list", length(cell$replicates))
   failure_list <- vector("list", length(cell$replicates))
@@ -424,7 +445,7 @@ fit_one_cell <- function(cell, order, MaxIter, verbose, progress_fun = NULL) {
 
 
 estimate_MSAR <- function(Density, N, M, T, n_ts, order, MaxIter, verbose, min_edg_val,
-                          Timeseries_data, workers = NULL) {
+                          Timeseries_data, workers = NULL, lasso_control = NULL) {
   
   if (is.null(workers)) {
     workers <- max(1, parallel::detectCores(logical = FALSE) - 1)
@@ -488,6 +509,7 @@ estimate_MSAR <- function(Density, N, M, T, n_ts, order, MaxIter, verbose, min_e
         cell_data,
         fit_one_cell,
         order = order, MaxIter = MaxIter, verbose = verbose, progress_fun = p,
+        lasso_control = lasso_control,
         future.seed = TRUE,
         future.scheduling = Inf  # one CELL per dispatch: cost is highly
         # heterogeneous across cells (e.g. N=8/
@@ -506,6 +528,7 @@ estimate_MSAR <- function(Density, N, M, T, n_ts, order, MaxIter, verbose, min_e
     results <- future.apply::future_lapply(
       cell_data,
       fit_one_cell, order = order, MaxIter = MaxIter, verbose = verbose,
+      lasso_control = lasso_control,
       future.seed = TRUE, future.scheduling = Inf
     )
   }

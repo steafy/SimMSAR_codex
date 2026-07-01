@@ -57,7 +57,7 @@ warmup <- 50                  # Number of warmup time steps (discarded from anal
 
 totTime <- T + warmup         # Total time steps including warmup
 
-n_ts <- 150                   # Number of time series to generate per condition
+n_ts <- 50                   # Number of time series to generate per condition
                               # Higher = more statistical power but slower
 
 # -----------------------------------------------------------------------------
@@ -73,6 +73,89 @@ eps <- 1e-5                   # Convergence criterion (epsilon)
                               # Smaller = stricter convergence
 
 retry_attempts <- 5           # Number of retry attempts if fitting fails
+
+# -----------------------------------------------------------------------------
+# LASSO / Penalization Parameters (first M-step of the EM algorithm)
+# -----------------------------------------------------------------------------
+# Control how the sparse network (Beta) is estimated in the first EM M-step.
+# Background & validation: docs/MSTEP_LASSO_CV_PENALIZATION.md.
+#
+# Two engines are available:
+#   "bic"      Legacy lars-subset + BIC + weighted-OLS refit. The L1 penalty has
+#              NO real effect: it returns a (near-)saturated network, and all
+#              sparsity comes from the downstream min_edg_val threshold applied
+#              in the analysis pipeline. Fast (~1x).
+#   "cvglmnet" Genuinely penalized: glmnet::cv.glmnet with correctly weighted
+#              observations. Produces a sparse network from the ESTIMATOR itself
+#              (before any threshold). To match/beat the legacy engine's recovery
+#              it MUST re-select the support every EM iteration (see below);
+#              with that on it recovers Beta/Kappa/Sigma as well or better AND
+#              gives threshold-free sparsity, at ~5x the legacy runtime.
+#
+# DEFAULT below = the validated "cvglmnet + re-select + fast CV" configuration.
+# Set lasso_engine <- "bic" to reproduce the previous (legacy) behaviour exactly.
+
+lasso_engine     <- "cvglmnet" # "cvglmnet" (genuine LASSO, default) | "bic" (legacy)
+
+lasso_reselect   <- TRUE       # Re-run the penalized support selection EVERY EM
+                               # iteration instead of freezing iteration 1's
+                               # support. REQUIRED for good recovery with
+                               # "cvglmnet": a frozen support (FALSE) is chosen
+                               # from the poor initial E-step and locks in missed
+                               # edges -> worse than legacy. Ignored for "bic".
+
+lasso_lambda     <- "1se"      # CV lambda rule: "1se" (sparser, recommended) or
+                               # "min" (denser, barely sparse). cvglmnet only.
+
+lasso_refit      <- TRUE       # TRUE = relaxed LASSO: re-estimate coefficients on
+                               # the selected support by unpenalized weighted OLS
+                               # (removes L1 shrinkage bias in the edge weights).
+                               # FALSE = use the shrunk glmnet coefficients
+                               # directly. cvglmnet only.
+
+lasso_adaptive   <- FALSE      # Adaptive LASSO penalty (penalty.factor=1/|OLS|).
+                               # Tested and NOT helpful here (over-penalizes weak
+                               # true edges near min_edg_val); keep FALSE.
+
+# --- cv.glmnet cost knobs (cvglmnet only) ------------------------------------
+# Because coefficients are refit by OLS (lasso_refit=TRUE), cv.glmnet only has to
+# pick the SUPPORT, so a cheap CV suffices. FIXED folds are important under
+# re-selection: random folds make the support flicker between iterations and
+# blow up the iteration count (5-fold random ~28 EM iters vs ~7 fixed). The
+# defaults below are ~2.5x faster than a naive 10-fold/100-lambda CV with
+# identical recovery. Going below 50 lambda or 3 folds starts to lose recovery.
+lasso_nfolds     <- 5          # Number of CV folds (5 recommended; >=3).
+lasso_nlambda    <- 50         # Length of the lambda grid (50 recommended; >=50).
+lasso_fixedfolds <- TRUE       # Deterministic (fixed) fold partition every EM
+                               # iteration -> stable support -> fast convergence.
+
+# --- re-selection schedule (advanced; cvglmnet + lasso_reselect only) --------
+# Full re-selection (defaults below) is the most robust. Partial schedules were
+# tested and are generally NOT worth it (they trade convergence stability for a
+# small speedup); see docs §5.1. Leave at the defaults unless experimenting.
+lasso_reselect_iters <- Inf    # Re-select only for the first k EM iterations,
+                               # then freeze. Inf = re-select every iteration.
+lasso_reselect_every <- 1      # Among re-selecting iterations, re-select every
+                               # m-th one. 1 = every iteration.
+
+# Assemble the control list passed to estimate_MSAR(). These are applied via
+# options() INSIDE each parallel worker (options do not propagate to future
+# workers automatically), so this is the correct way to configure a parallel run.
+lasso_control <- list(
+  simmsar_lasso_engine         = lasso_engine,
+  simmsar_lasso_reselect       = lasso_reselect,
+  simmsar_lasso_lambda         = lasso_lambda,
+  simmsar_lasso_refit          = lasso_refit,
+  simmsar_lasso_adaptive       = lasso_adaptive,
+  simmsar_lasso_nfolds         = lasso_nfolds,
+  simmsar_lasso_nlambda        = lasso_nlambda,
+  simmsar_lasso_fixedfolds     = lasso_fixedfolds,
+  simmsar_lasso_reselect_iters = lasso_reselect_iters,
+  simmsar_lasso_reselect_every = lasso_reselect_every
+)
+# Also apply in the main process (covers sequential runs / interactive fits;
+# the parallel workers get their own copy via estimate_MSAR(lasso_control=...)).
+do.call(options, lasso_control)
 
 # -----------------------------------------------------------------------------
 # Parallelisierung
@@ -129,7 +212,10 @@ CONFIG <- list(
 
   # Regime dynamics
   stay_prob_lower = remain_lower,
-  stay_prob_upper = remain_upper
+  stay_prob_upper = remain_upper,
+
+  # LASSO / penalization (first M-step)
+  lasso_control = lasso_control
 )
 
 cat("\n")
@@ -146,6 +232,12 @@ cat(sprintf("Edge Range:   [%.2f, %.2f]\n",
             min_edg_val, max_edg_val))
 cat(sprintf("Stay Prob:    [%.2f, %.2f]\n",
             remain_lower, remain_upper))
+if (identical(lasso_engine, "cvglmnet")) {
+  cat(sprintf("LASSO:        cvglmnet, re-select=%s, lambda.%s, refit=%s, %d folds x %d lambda, fixed folds=%s\n",
+              lasso_reselect, lasso_lambda, lasso_refit, lasso_nfolds, lasso_nlambda, lasso_fixedfolds))
+} else {
+  cat("LASSO:        bic (legacy; sparsity via min_edg_val threshold only)\n")
+}
 cat("═══════════════════════════════════════════════════════════════\n")
 cat("\n")
 
@@ -193,7 +285,8 @@ MSAR_dynamics_list <- estimate_MSAR(
   verbose = verbose,
   min_edg_val = min_edg_val,
   Timeseries_data = Timeseries_data,
-  workers = workers
+  workers = workers,
+  lasso_control = lasso_control   # LASSO engine / re-selection settings (see above)
 )
 
 cat("Model estimation complete!\n\n")

@@ -112,7 +112,8 @@
 #'
 #' @export
 source("R/estimation/as_theta_msar.R")
-source("R/estimation/mstep_hh_lasso_msar.R")
+source("R/estimation/mstep_hh_lasso_msar.R")      # cv.glmnet engine (opt-in)
+source("R/estimation/mstep_hh_lasso_msar_bic.R")  # legacy lars+BIC engine (default)
 source("R/estimation/mstep_hh_reduct_msar.R")
 source("R/estimation/em_converged.R")
 
@@ -195,15 +196,42 @@ function(
         #par = NHMSAR:::Mstep.hh.ridge.MSAR(data,theta,FB,lambda=lambda2)
       }
       else if (penalty=="LASSO")	{
-        
-        # 
-        # call PATCHED !!!
-        #
-        
-        if (cnt>1) {
-          par = mstep_hh_reduct_msar(data,theta,FB,sigma.diag=sigma.diag)
-        } 
-        else {par = mstep_hh_lasso_msar(data,theta,FB)}
+
+        # LASSO first-M-step engine + support strategy, selected via options so
+        # call sites don't change (see docs/MSTEP_LASSO_CV_PENALIZATION.md):
+        #   simmsar_lasso_engine   = "bic" (default, legacy lars+BIC) | "cvglmnet"
+        #   simmsar_lasso_reselect = FALSE (default) | TRUE  -- cvglmnet only;
+        #     re-run the penalized selection instead of freezing iteration 1's
+        #     support. Re-selection is what makes the genuinely-penalized
+        #     estimator match/beat the legacy engine's recovery (a frozen
+        #     cv.glmnet support is worse); the cost is a cv.glmnet fit per
+        #     re-selected iteration.
+        #   simmsar_lasso_reselect_iters = k (default Inf): re-select only while
+        #     cnt <= k, then FREEZE the support and refine it cheaply with the
+        #     reduced M-step. The support settles early (regimes separate in the
+        #     first few EM steps), so a small k recovers most of the benefit at a
+        #     fraction of the full-re-selection cost.
+        #   simmsar_lasso_reselect_every = m (default 1): among re-selecting
+        #     iterations, only re-select every m-th one.
+        engine   <- getOption("simmsar_lasso_engine", "bic")
+        reselect <- isTRUE(getOption("simmsar_lasso_reselect", FALSE))
+        rs_iters <- getOption("simmsar_lasso_reselect_iters", Inf)
+        rs_every <- getOption("simmsar_lasso_reselect_every", 1)
+        if (engine == "cvglmnet") {
+          do_reselect <- reselect && (cnt <= rs_iters) && (((cnt - 1) %% rs_every) == 0)
+          if (cnt == 1 || do_reselect) {
+            par = mstep_hh_lasso_msar(data,theta,FB)
+          } else {
+            par = mstep_hh_reduct_msar(data,theta,FB,sigma.diag=sigma.diag)
+          }
+        } else {
+          # legacy default: lars+BIC first step, reduced M-step thereafter
+          if (cnt > 1) {
+            par = mstep_hh_reduct_msar(data,theta,FB,sigma.diag=sigma.diag)
+          } else {
+            par = mstep_hh_lasso_bic(data,theta,FB)
+          }
+        }
       }
       else if (penalty=="SCAD") {
         par = NHMSAR:::Mstep.hh.SCAD.MSAR(data,theta,FB,penalty="SCAD",lambda1=lambda1,lambda2=lambda2,par=par)
