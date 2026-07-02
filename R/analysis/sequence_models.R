@@ -223,17 +223,22 @@ fit_sequence_recovery_model <- function(fit_results) {
 #   * For Beta_corr/Kappa_corr/Beta_ac the unit is a per-REGIME row (regime_rows);
 #     a fit is "missing" if estimation failed (fit_null / zero_var_beta / no_data).
 #   * For RQ4 the unit is a per-FIT row (fit_results), absent under ANY of those
-#     same estimation failures AND under seq_length_mismatch (the EM fit + regime
+#     same estimation failures, under seq_length_mismatch (the EM fit + regime
 #     matching succeeded, but the true and reconstructed regime sequences had
-#     different lengths, so no fit-level sequence row could be built). Either
-#     removes a replicate from the RQ4 sample, so the per-cell RQ4 missingness is
-#     the COMBINED set. Because the four mechanisms are mutually exclusive per
-#     replicate (fit_one_replicate returns at the first one it hits), a missing
-#     fit_results row corresponds to exactly one of them -- so the combined
-#     missingness is measured directly as (n_ts - number of fit_results rows) per
-#     design cell, with no need to parse the failure log to DEFINE it. The log is
-#     used only to ATTRIBUTE that missingness by stage (printed below), which in
-#     particular makes the seq_length_mismatch contribution explicit.
+#     different lengths, so no fit-level sequence row could be built), AND under
+#     partial_zero_var_beta (SOME but not all estimated Betas were degenerate: the
+#     healthy regimes are salvaged into the main table for RQ1-3, but no fit-level
+#     sequence row is built, so the fit is deliberately kept OUT of RQ4 -- a
+#     partial regime map cannot support a well-defined full-sequence kappa). Any
+#     of these removes a replicate from the RQ4 sample, so the per-cell RQ4
+#     missingness is the COMBINED set. Because the five mechanisms are mutually
+#     exclusive per replicate (fit_one_replicate returns at the first one it
+#     hits), a missing fit_results row corresponds to exactly one of them -- so
+#     the combined missingness is measured directly as (n_ts - number of
+#     fit_results rows) per design cell, with no need to parse the failure log to
+#     DEFINE it. The log is used only to ATTRIBUTE that missingness by stage
+#     (printed below), which in particular makes the seq_length_mismatch and
+#     partial_zero_var_beta contributions explicit.
 #
 # Exclusion threshold (>10% per cell, fail_threshold) and the Full-vs-Sensitivity
 # coefficient comparison match sensitivity.R so the two slot together in the

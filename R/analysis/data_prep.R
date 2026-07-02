@@ -130,6 +130,11 @@ compute_recovery_metrics <- function(MSAR_dynamics_list,
 
   validity_records  <- list()
   magnitude_records <- list()
+  unmatched_records <- list()
+
+  is_missing_estimate <- function(x) {
+    is.null(x) || (length(x) == 1 && is.na(x))
+  }
 
   for (r in seq_len(n)) {
     orig_Beta    <- MSAR_dynamics_list$orig_Beta[[r]]
@@ -137,6 +142,38 @@ compute_recovery_metrics <- function(MSAR_dynamics_list,
     orig_Kappa   <- MSAR_dynamics_list$orig_Kappa[[r]]
     est_Sigma    <- MSAR_dynamics_list$est_Sigma[[r]]
     orig_Beta_ac <- MSAR_dynamics_list$orig_Beta_ac[[r]]
+
+    # --- Unmatched-true-regime guard (partial regime match) ---------------------
+    # estimate_MSAR() emits rows with est_Beta / est_Sigma = NULL for a true
+    # regime whose estimated counterpart was a degenerate (zero-variance) Beta and
+    # was therefore left unassigned by match_regimes()'s partial-match path. There
+    # is no estimate to threshold/correlate/invert here, so set EVERY derived
+    # outcome (Beta AND Kappa) to NA and log the row -- do NOT call
+    # threshold_beta()/cor()/solve() on a NULL/NA. Distinct from the sigma and
+    # magnitude gates: those flag a computed-but-untrustworthy estimate, whereas
+    # here no estimate exists at all.
+    if (is_missing_estimate(est_Beta_raw)) {
+      est_Kappa[[r]]   <- NA
+      est_Beta_ac[[r]] <- NA
+      Beta_corr[r]  <- NA_real_
+      Beta_sen[r]   <- NA_real_; Beta_spec[r]  <- NA_real_
+      Kappa_corr[r] <- NA_real_
+      Kappa_sen[r]  <- NA_real_; Kappa_spec[r] <- NA_real_
+      Beta_ac_corr_pearson[r]  <- NA_real_
+      Beta_ac_corr_spearman[r] <- NA_real_
+      NRMSE_Beta[r]  <- NA_real_
+      NRMSE_Kappa[r] <- NA_real_
+      unmatched_records[[length(unmatched_records) + 1L]] <- tibble::tibble(
+        timesteps = MSAR_dynamics_list$timesteps[r],
+        density   = MSAR_dynamics_list$density[r],
+        nodes     = MSAR_dynamics_list$nodes[r],
+        regimes   = MSAR_dynamics_list$regimes[r],
+        ts_id     = MSAR_dynamics_list$ts_id[r],
+        regime_id = MSAR_dynamics_list$regime_id[r],
+        reason    = "unmatched_regime"
+      )
+      next
+    }
 
     # --- Beta (unaffected by Sigma conditioning): threshold, then score ---------
     est_Beta <- threshold_beta(est_Beta_raw)
@@ -312,6 +349,32 @@ compute_recovery_metrics <- function(MSAR_dynamics_list,
   cat("spearman; Kappa: NRMSE_Kappa, Kappa_corr, Kappa_sen/spec -- per regime,\n")
   cat("never the whole fit, and the two sides are gated independently. See\n")
   cat("summarize_magnitude_validity().\n")
+
+  # --- Unmatched-regime rows (partial regime match) --------------------------
+  # Distinct from both gates above: these rows carried NO estimate at all (a true
+  # regime left unassigned by match_regimes()'s partial-match path). Every derived
+  # outcome is NA for them. Logged separately so failure-analysis can see how many
+  # regime rows were salvaged-but-empty vs. fully scored.
+  unmatched_validity_log <- if (length(unmatched_records) > 0) {
+    dplyr::bind_rows(unmatched_records)
+  } else {
+    tibble::tibble(
+      timesteps = integer(0), density = numeric(0), nodes = integer(0),
+      regimes = integer(0), ts_id = integer(0), regime_id = integer(0),
+      reason = character(0)
+    )
+  }
+  attr(MSAR_dynamics_list, "unmatched_validity_log") <- unmatched_validity_log
+
+  n_unmatched <- nrow(unmatched_validity_log)
+  if (n_unmatched > 0) {
+    cat(sprintf("\n=== UNMATCHED REGIME ROWS (partial regime match) ===\nNo estimate: %d of %d regime rows (%.2f%%)\n",
+                n_unmatched, n, if (n > 0) 100 * n_unmatched / n else 0))
+    cat("All derived metrics (Beta + Kappa) NA for these rows -- the true regime's\n")
+    cat("estimated counterpart was a degenerate zero-variance Beta and was left\n")
+    cat("unassigned. The fit's healthy regimes are scored normally; the fit is\n")
+    cat("excluded from RQ4. See attr 'unmatched_validity_log'.\n")
+  }
 
   MSAR_dynamics_list
 }
