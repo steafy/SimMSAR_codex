@@ -285,3 +285,78 @@ export_diagnostics_pdf <- function(all_results, corr_cols) {
 
   cat("Diagnostic plots saved to:", diag_pdf, "\n\n")
 }
+
+# -----------------------------------------------------------------------------
+# 6.4: RQ4 regime-sequence recovery LMM -- coefficient table (HTML + LaTeX)
+# -----------------------------------------------------------------------------
+# Mirrors export_coefficient_tables() above, but for the single RQ4 outcome
+# (Cohen's kappa). Previously this model was only fit and printed to console
+# via fit_sequence_recovery_model() and never written to disk -- this closes
+# that gap. Exports seq_recovery$primary_model, i.e. whichever model the Delta
+# AIC > 10 interaction check in fit_sequence_recovery_model() selected (main
+# effects only, or + logT x Regimes) -- NOT necessarily seq_recovery$main_
+# effects_model, which the secondary GLMM and the sensitivity refit use
+# instead for their own (interaction-free) comparisons. The caption records
+# which one was exported so this stays traceable in the .tex source.
+export_sequence_recovery_table <- function(seq_recovery) {
+
+  if (is.null(seq_recovery) || is.null(seq_recovery$primary_model)) {
+    cat("No RQ4 model available; skipping RQ4 table export.\n")
+    return(invisible(NULL))
+  }
+
+  model       <- seq_recovery$primary_model
+  model_label <- seq_recovery$primary_label
+
+  coef_summary <- summary(model)$coefficients
+
+  coef_df <- data.frame(
+    Predictor = rownames(coef_summary),
+    Estimate = coef_summary[, "Estimate"],
+    `Std. Error` = coef_summary[, "Std. Error"],
+    df = coef_summary[, "df"],
+    `t value` = coef_summary[, "t value"],
+    p_raw = coef_summary[, "Pr(>|t|)"],
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+
+  # FDR correction within this model (same convention as export_coefficient_tables)
+  coef_df$`p (BH-adj.)` <- p.adjust(coef_df$p_raw, method = "BH")
+  coef_df$sig <- ifelse(coef_df$`p (BH-adj.)` < 0.001, "***",
+                        ifelse(coef_df$`p (BH-adj.)` < 0.01, "**",
+                               ifelse(coef_df$`p (BH-adj.)` < 0.05, "*", "")))
+
+  coef_df_export <- coef_df[, c("Predictor", "Estimate", "Std. Error", "df", "t value",
+                                "p (BH-adj.)", "sig")]
+
+  # Same predictor-name cleanup as export_coefficient_tables(): interaction
+  # symbol, drop standardisation suffixes. Handles logT:Regimes3-style terms
+  # from the interaction model too (":" -> " x ").
+  coef_df_export$Predictor <- gsub(":",         " \u00d7 ", coef_df_export$Predictor)
+  coef_df_export$Predictor <- gsub("_s\\b",     "",         coef_df_export$Predictor)
+  coef_df_export$Predictor <- gsub("_num\\b",   "",         coef_df_export$Predictor)
+
+  file_base <- "Results_RQ4_seq_kappa_mixed"
+  caption   <- paste0("RQ4 regime-sequence recovery (Cohen's kappa): ", model_label)
+
+  kable(coef_df_export,
+        caption = caption,
+        digits = 3,
+        format = "html",
+        row.names = FALSE) %>%
+    kable_styling(bootstrap_options = c("striped", "hover")) %>%
+    save_kable(file = results_file(paste0(file_base, ".html")))
+
+  print(
+    xtable(coef_df_export,
+           caption = caption,
+           digits = 3,
+           row.names = FALSE),
+    file = results_file(paste0(file_base, ".tex")),
+    include.rownames = FALSE
+  )
+
+  cat("Exported RQ4 results (", model_label, ") to", RESULTS_DIR, "\n")
+  invisible(coef_df_export)
+}
