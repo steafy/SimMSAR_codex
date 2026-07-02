@@ -49,23 +49,28 @@ source("R/utils/average_controllability.R")    # est_Beta_ac from stored est_Bet
 #                  squared-error measure, a single such entry can inflate it by
 #                  orders of magnitude (observed max: NRMSE_Beta = 84.7,
 #                  NRMSE_Kappa = 8423). NRMSE is the most SENSITIVE derived
-#                  metric to such an entry (empirically it was the only one
-#                  visibly distorted -- zero overlap with the |Fisher z| > 5
-#                  rows for the correlation outcomes), but a regime whose
-#                  thresholded estimate contains a numerically-degenerate edge
-#                  is not a trustworthy recovery datapoint for ANY outcome. The
-#                  gate below therefore NAs ALL derived metrics of the affected
-#                  side for that regime -- for Beta: NRMSE_Beta, Beta_corr,
-#                  Beta_sen, Beta_spec, Beta_ac_corr_pearson, Beta_ac_corr_spearman;
-#                  for Kappa: NRMSE_Kappa, Kappa_corr, Kappa_sen, Kappa_spec --
-#                  mirroring the KAPPA_COND_MAX gate's "per side, per regime,
-#                  never the whole fit" philosophy. (This is stricter than the
-#                  original NRMSE-only gate: the correlation/sens/spec values
-#                  were checked to be UNREMARKABLE for these rows, so gating them
-#                  removes little signal, but it keeps every reported outcome on
-#                  a consistent, degeneracy-free footing rather than reporting a
-#                  correlation for a regime whose NRMSE we already declared
-#                  untrustworthy.) It still does NOT exclude rows post hoc based
+#                  metric to such an entry (empirically it was the first one
+#                  visibly distorted), but a regime whose thresholded estimate
+#                  contains a numerically-degenerate edge is not a trustworthy
+#                  recovery datapoint for ANY outcome. The gate below therefore
+#                  NAs ALL derived metrics of the regime row -- BOTH sides --
+#                  whenever EITHER side is magnitude-flagged: Beta (NRMSE_Beta,
+#                  Beta_corr, Beta_sen, Beta_spec, Beta_ac_corr_pearson,
+#                  Beta_ac_corr_spearman) AND Kappa (NRMSE_Kappa, Kappa_corr,
+#                  Kappa_sen, Kappa_spec). The two sides are CROSS-COUPLED (a
+#                  Beta flag NAs Kappa too, and vice versa) because they are not
+#                  independent failures: sigma[[j]]/Kappa for a regime are built
+#                  directly from that regime's Beta M-step residuals (tmp2 = op_2
+#                  + A2.lasso %*% op %*% t(A2.lasso) - ...), so a magnitude-
+#                  exploded Beta propagates into its Sigma/Kappa; and both
+#                  explosions share a root cause (very low postmix /
+#                  poorly-separated regime). Confirmed empirically: within the
+#                  SAME design cell (controlling for difficulty), magnitude-
+#                  flagged rows have markedly lower Beta_corr AND Kappa_corr and
+#                  far smaller postmix than unflagged rows in that cell -- so the
+#                  correlation/sens/spec on either side are NOT trustworthy for a
+#                  flagged regime, and are gated rather than reported. It still
+#                  does NOT exclude rows post hoc based
 #                  on the NRMSE value itself (which would be circular: selecting
 #                  on the outcome you are trying to describe, and would
 #                  artificially hide exactly the hardest design cells this
@@ -193,23 +198,21 @@ compute_recovery_metrics <- function(MSAR_dynamics_list,
     Beta_ac_corr_pearson[r]  <- cor(orig_Beta_ac, ac, method = "pearson")
     Beta_ac_corr_spearman[r] <- cor(orig_Beta_ac, ac, method = "spearman")
 
-    # Plausibility gate (see max_plausible_magnitude doc above): thresholding
-    # only zeroes small entries, so a single numerically-degenerate large one
-    # (e.g. an under-regularized regression edge) survives untouched and can
-    # inflate NRMSE_Beta by orders of magnitude. Flagged per regime; NAs ALL
-    # Beta-derived metrics for that regime -- NRMSE_Beta, Beta_corr, Beta_sen,
-    # Beta_spec, Beta_ac_corr_pearson, Beta_ac_corr_spearman (all computed above
-    # from the same est_Beta / its controllability) -- since a regime carrying a
-    # numerically-degenerate edge is not a trustworthy recovery datapoint for any
-    # outcome (see doc above). Per regime, never the whole fit; never affects Kappa.
+    # Plausibility gate, part 1 -- DETECT (see max_plausible_magnitude doc above):
+    # thresholding only zeroes small entries, so a single numerically-degenerate
+    # large one (e.g. an under-regularized regression edge) survives untouched and
+    # can inflate NRMSE_Beta by orders of magnitude. Here we only FLAG and log the
+    # regime; the actual NA-ing is deferred to the cross-coupled block after the
+    # Kappa metrics are computed, because a magnitude-exploded Beta propagates into
+    # the SAME regime's Sigma/Kappa (sigma[[j]] is built from Beta's M-step
+    # residuals: tmp2 = op_2 + A2.lasso %*% op %*% t(A2.lasso) - ...), and both
+    # explosions share a root cause (very low postmix / poorly-separated regime).
+    # So either flag invalidates BOTH sides of the row (see the gate block below).
+    beta_flagged  <- FALSE
+    kappa_flagged <- FALSE
     max_abs_beta <- max(abs(est_Beta))
     if (!is.finite(max_abs_beta) || max_abs_beta > max_plausible_magnitude) {
-      NRMSE_Beta[r]            <- NA_real_
-      Beta_corr[r]             <- NA_real_
-      Beta_sen[r]              <- NA_real_
-      Beta_spec[r]             <- NA_real_
-      Beta_ac_corr_pearson[r]  <- NA_real_
-      Beta_ac_corr_spearman[r] <- NA_real_
+      beta_flagged <- TRUE
       magnitude_records[[length(magnitude_records) + 1L]] <- tibble::tibble(
         timesteps = MSAR_dynamics_list$timesteps[r],
         density   = MSAR_dynamics_list$density[r],
@@ -249,23 +252,18 @@ compute_recovery_metrics <- function(MSAR_dynamics_list,
       NRMSE_Kappa[r] <- rmse_true_edges(vectorize_upper_tri(orig_Kappa, diag = FALSE),
                                         vectorize_upper_tri(kap,        diag = FALSE)) / EDGE_VALUE_RANGE
 
-      # Plausibility gate, mirrors the Beta one above. A Sigma_hat can be
-      # well-conditioned BY RATIO (passes KAPPA_COND_MAX via rcond) while
-      # having uniformly tiny eigenvalues, so its inverse still explodes in
-      # absolute terms. Off-diagonal only, matching what NRMSE_Kappa scores
-      # (the diagonal is a different, unbounded inverse-variance scale and is
-      # never thresholded either -- see threshold_kappa_offdiag()). NAs ALL
-      # Kappa-derived metrics for that regime -- NRMSE_Kappa, Kappa_corr,
-      # Kappa_sen, Kappa_spec (all computed above from the same kap) -- since a
-      # regime carrying a numerically-degenerate precision entry is not a
-      # trustworthy recovery datapoint for any Kappa outcome (see doc above).
+      # Plausibility gate, part 1 -- DETECT (mirrors the Beta one above). A
+      # Sigma_hat can be well-conditioned BY RATIO (passes KAPPA_COND_MAX via
+      # rcond) while having uniformly tiny eigenvalues, so its inverse still
+      # explodes in absolute terms. Off-diagonal only, matching what NRMSE_Kappa
+      # scores (the diagonal is a different, unbounded inverse-variance scale and
+      # is never thresholded either -- see threshold_kappa_offdiag()). As with
+      # Beta we only FLAG here; the NA-ing (of BOTH sides) is deferred to the
+      # cross-coupled block after this if/else, since the two explosions co-occur.
       off_mask <- !diag(TRUE, nrow(kap))
       max_abs_kappa <- max(abs(kap[off_mask]))
       if (!is.finite(max_abs_kappa) || max_abs_kappa > max_plausible_magnitude) {
-        NRMSE_Kappa[r] <- NA_real_
-        Kappa_corr[r]  <- NA_real_
-        Kappa_sen[r]   <- NA_real_
-        Kappa_spec[r]  <- NA_real_
+        kappa_flagged <- TRUE
         magnitude_records[[length(magnitude_records) + 1L]] <- tibble::tibble(
           timesteps = MSAR_dynamics_list$timesteps[r],
           density   = MSAR_dynamics_list$density[r],
@@ -293,6 +291,33 @@ compute_recovery_metrics <- function(MSAR_dynamics_list,
         reason    = invalid_reason,
         condition_number = cond_number
       )
+    }
+
+    # Plausibility gate, part 2 -- CROSS-COUPLED NA (see max_plausible_magnitude
+    # doc above). Applied once per row after BOTH sides' metrics and both flags
+    # exist. A magnitude explosion on either side (beta_flagged OR kappa_flagged)
+    # invalidates ALL derived outcomes of that regime row -- BOTH the Beta side
+    # (Beta_corr, Beta_sen, Beta_spec, Beta_ac_corr_pearson/spearman, NRMSE_Beta)
+    # AND the Kappa side (Kappa_corr, Kappa_sen, Kappa_spec, NRMSE_Kappa) -- not
+    # just the flagged side. Rationale: sigma[[j]]/Kappa are computed from that
+    # regime's Beta M-step residuals, so a magnitude-degenerate Beta propagates
+    # into its Sigma/Kappa; and both explosions share a root cause (very low
+    # postmix / poorly-separated regime), so a flag on either side marks the whole
+    # regime row as an untrustworthy recovery datapoint. Confirmed empirically:
+    # within the same design cell, flagged rows have far lower Beta_corr/Kappa_corr
+    # and much smaller postmix than unflagged rows. (Kappa may already be NA here
+    # via the condition-number gate; the assignment is idempotent in that case.)
+    if (isTRUE(beta_flagged) || isTRUE(kappa_flagged)) {
+      Beta_corr[r]             <- NA_real_
+      Beta_sen[r]              <- NA_real_
+      Beta_spec[r]             <- NA_real_
+      Beta_ac_corr_pearson[r]  <- NA_real_
+      Beta_ac_corr_spearman[r] <- NA_real_
+      NRMSE_Beta[r]            <- NA_real_
+      Kappa_corr[r]            <- NA_real_
+      Kappa_sen[r]             <- NA_real_
+      Kappa_spec[r]            <- NA_real_
+      NRMSE_Kappa[r]           <- NA_real_
     }
   }
 
@@ -344,11 +369,12 @@ compute_recovery_metrics <- function(MSAR_dynamics_list,
     by_reason <- table(magnitude_validity_log$reason)
     cat("  ", paste(names(by_reason), by_reason, sep = ": ", collapse = "; "), "\n")
   }
-  cat("ALL derived metrics of the affected side are set to NA for the flagged\n")
-  cat("regime -- Beta: NRMSE_Beta, Beta_corr, Beta_sen/spec, Beta_ac_corr_pearson/\n")
-  cat("spearman; Kappa: NRMSE_Kappa, Kappa_corr, Kappa_sen/spec -- per regime,\n")
-  cat("never the whole fit, and the two sides are gated independently. See\n")
-  cat("summarize_magnitude_validity().\n")
+  cat("ALL derived metrics of the flagged regime row are set to NA -- BOTH sides,\n")
+  cat("cross-coupled: EITHER a beta_ or kappa_implausible_magnitude flag NAs Beta\n")
+  cat("(NRMSE_Beta, Beta_corr, Beta_sen/spec, Beta_ac_corr_pearson/spearman) AND\n")
+  cat("Kappa (NRMSE_Kappa, Kappa_corr, Kappa_sen/spec) for that regime. Per regime,\n")
+  cat("never the whole fit. (Row counts above are flag EVENTS, so a row flagged on\n")
+  cat("both sides is counted once per reason.) See summarize_magnitude_validity().\n")
 
   # --- Unmatched-regime rows (partial regime match) --------------------------
   # Distinct from both gates above: these rows carried NO estimate at all (a true
@@ -427,10 +453,14 @@ summarize_sigma_validity <- function(MSAR_dynamics_list,
 # was for Beta in the first place, but the thresholded estimate still contains
 # at least one entry more than `max_plausible_magnitude` times the generating
 # range -- a numerically degenerate single edge, not a uniformly worse fit.
-# ALL derived metrics of the affected side are NA'd for that regime (Beta:
-# NRMSE_Beta, Beta_corr, Beta_sen/spec, Beta_ac_corr_pearson/spearman; Kappa:
-# NRMSE_Kappa, Kappa_corr, Kappa_sen/spec) -- per regime, never the whole fit,
-# the two sides gated independently.
+# ALL derived metrics of the regime row are NA'd -- BOTH sides, cross-coupled:
+# EITHER a beta_ or kappa_implausible_magnitude flag NAs Beta (NRMSE_Beta,
+# Beta_corr, Beta_sen/spec, Beta_ac_corr_pearson/spearman) AND Kappa (NRMSE_Kappa,
+# Kappa_corr, Kappa_sen/spec) for that regime -- because the two explosions
+# co-occur (Kappa is built from Beta's M-step residuals; shared low-postmix root
+# cause). Per regime, never the whole fit. Note: the log has one ROW per flag
+# event, so a regime flagged on both sides appears in both reason tallies even
+# though it is a single NA'd row.
 summarize_magnitude_validity <- function(MSAR_dynamics_list,
                                          by = c("timesteps", "density", "nodes", "regimes")) {
 
