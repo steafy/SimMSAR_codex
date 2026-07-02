@@ -261,7 +261,12 @@ function(data,theta,FB,verbose = FALSE)  {
     }
 
     A2[[j]][[1]] = A2.lasso
-    sigma[[j]]=tmp2[1:d,1:d]
+    # Optional in-EM stabilization of the residual covariance (default OFF; see
+    # docs/SIGMA_KAPPA_DEGENERACY_DIAGNOSIS.md). Keeps Sigma dense; no-op unless
+    # simmsar_sigma_stab is set. Applied here so the NEXT E-step's likelihood and
+    # the stored est_Sigma both see a well-conditioned matrix.
+    stab <- if (exists("stabilize_sigma", mode = "function")) stabilize_sigma else identity
+    sigma[[j]]=stab(tmp2[1:d,1:d])
     moy[j,1:d] = tmp[1:d]
   }
 

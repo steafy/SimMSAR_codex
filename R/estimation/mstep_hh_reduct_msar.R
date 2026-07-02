@@ -201,7 +201,15 @@ mstep_hh_reduct_msar <-
         sigma[[j]][w] = tmp2[1:d, 1:d][w]
         #sigma[[j]]=tmp2[1:d,1:d]
       }
-      
+
+      # Optional in-EM stabilization of the residual covariance (default OFF; see
+      # docs/SIGMA_KAPPA_DEGENERACY_DIAGNOSIS.md). Applied AFTER the support-copy
+      # above so the next iteration's S.th (used in this step's linear solve) is
+      # well-conditioned too. Stabilization keeps Sigma dense, so it does not arm
+      # the `w = which(abs(theta$sigma[[j]]) > 0)` freeze above (verified in A/B).
+      stab <- if (exists("stabilize_sigma", mode = "function")) stabilize_sigma else identity
+      sigma[[j]] = stab(sigma[[j]])
+
       moy[j, 1:d] = tmp[1:d]
     }
     

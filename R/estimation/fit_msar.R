@@ -112,6 +112,7 @@
 #'
 #' @export
 source("R/estimation/as_theta_msar.R")
+source("R/estimation/stabilize_sigma.R")          # opt-in Sigma stabilization (default off)
 source("R/estimation/mstep_hh_lasso_msar.R")      # cv.glmnet engine (opt-in)
 source("R/estimation/mstep_hh_lasso_msar_bic.R")  # legacy lars+BIC engine (default)
 source("R/estimation/mstep_hh_reduct_msar.R")
@@ -177,6 +178,17 @@ function(
   ll_history = NULL
   converged = em_converged(0,2*eps,eps);
   par = NULL
+  # ---- opt-in Sigma/Kappa degeneracy trace (uncommitted diagnostic) ---------
+  # Guarded by option, OFF by default, so production/parallel runs are unchanged.
+  # When on, records per EM iteration and per regime: postmix (effective obs
+  # count, from the FB that fed THIS M-step) and rcond(theta$sigma[[j]]) of the
+  # resulting covariance -- to see whether the near-singularity of Sigma develops
+  # gradually over iterations or appears sharply. See
+  # docs/SIGMA_KAPPA_DEGENERACY_DIAGNOSIS.md. Traces are in the model's own
+  # (pre-final-sort) estimated-regime labelling; that is fine for the conditioning
+  # question, which does not need truth-matching.
+  capture_trace <- isTRUE(getOption("simmsar_capture_sigma_trace", FALSE))
+  sigma_trace   <- if (capture_trace) list() else NULL
   while (converged[1]==0 && cnt < MaxIter) {
     cnt <- cnt+1
     
@@ -284,9 +296,31 @@ function(
     converged = em_converged(loglik, previous_loglik, eps)
     previous_loglik = loglik
     attributes(theta) = att.theta
-    theta = as_theta_msar(theta,label=label,ncov.emis = ncov.emis,ncov.trans=ncov.trans)             
-    
-    
+    theta = as_theta_msar(theta,label=label,ncov.emis = ncov.emis,ncov.trans=ncov.trans)
+
+    if (capture_trace) {
+      # postmix[j] = effective obs count for regime j from the FB used in this
+      # iteration's M-step (colSums of smoothed probs over samples x time).
+      pm <- tryCatch({
+        pS <- FB$probS
+        if (M == 1) {
+          sum(pS, na.rm = TRUE)
+        } else if (length(dim(pS)) == 3) {
+          apply(pS, length(dim(pS)), function(sl) sum(sl, na.rm = TRUE))
+        } else {
+          colSums(matrix(pS, ncol = M), na.rm = TRUE)
+        }
+      }, error = function(e) rep(NA_real_, M))
+      rc <- vapply(seq_len(M), function(j) {
+        S <- if (M == 1) theta$sigma[[1]] else theta$sigma[[j]]
+        S <- as.matrix(S)
+        tryCatch(rcond(S), error = function(e) NA_real_)
+      }, numeric(1))
+      sigma_trace[[length(sigma_trace) + 1L]] <- list(
+        iter = cnt, loglik = loglik, postmix = pm, rcond = rc
+      )
+    }
+
     # -----------------------------
     # ...... E step
     FB = NHMSAR:::Estep.MSAR(data,theta,covar.emis=covar.emis,covar.trans=covar.trans)
@@ -377,6 +411,7 @@ function(
     ll.pen = (FB$loglik-((T-1)*N.samples)*pen)
   }
   res = list(theta=theta,ll_history=ll_history,Iter=cnt,Npar=Npar,BIC=BIC,smoothedprob=FB$probS,ll.pen = ll.pen)
+  if (capture_trace) res$sigma_trace <- sigma_trace
   class(res) <- "MSAR"
   res$call = cl
   res

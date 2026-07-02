@@ -20,16 +20,16 @@ source("R/estimation/estimate_MSAR.R")
 # -----------------------------------------------------------------------------
 # Network Structure Parameters
 # -----------------------------------------------------------------------------
-N <- c(4, 6, 8)                  # Number of nodes in the network
+N <- c(4, 6, 8)                 # Number of nodes in the network
 
 Density <- c(0.25, 0.5, 0.75)   # Network edge density (proportion of possible edges)
-                              # Range: 0 to 1
-                              # Can be a vector: c(0.2, 0.5, 0.8)
+                                # Range: 0 to 1
+                                # Can be a vector: c(0.2, 0.5, 0.8)
 
 # -----------------------------------------------------------------------------
 # Regime Parameters
 # -----------------------------------------------------------------------------
-M <- c(1, 2, 3, 4)               # Number of regimes (network states)
+M <- c(1, 2, 3, 4)            # Number of regimes (network states)
                               # Can be a vector: c(2, 3, 4)
 
 remain_lower <- 0.85          # Lower bound for probability to stay in same regime
@@ -57,7 +57,7 @@ warmup <- 50                  # Number of warmup time steps (discarded from anal
 
 totTime <- T + warmup         # Total time steps including warmup
 
-n_ts <- 50                   # Number of time series to generate per condition
+n_ts <- 5                     # Number of time series to generate per condition
                               # Higher = more statistical power but slower
 
 # -----------------------------------------------------------------------------
@@ -138,6 +138,34 @@ lasso_reselect_iters <- Inf    # Re-select only for the first k EM iterations,
 lasso_reselect_every <- 1      # Among re-selecting iterations, re-select every
                                # m-th one. 1 = every iteration.
 
+# -----------------------------------------------------------------------------
+# Residual-covariance (Sigma) stabilization
+# -----------------------------------------------------------------------------
+# Optional in-EM regularization of the regime-weighted residual covariance Sigma,
+# to stop it becoming pathologically ill-conditioned when a regime is assigned very
+# few effective observations (small postmix) relative to its d(d+1)/2 covariance
+# parameters -- the under-determination that produces exploding Kappa = solve(Sigma)
+# estimates and outright fit failures. Diagnosis & validation:
+# docs/SIGMA_KAPPA_DEGENERACY_DIAGNOSIS.md. Applied on EVERY M-step; keeps Sigma
+# dense (never introduces zeros). Default "none" reproduces the previous behaviour.
+#
+#   "none"   no stabilization (default; production behaviour unchanged).
+#   "floor"  eigenvalue floor: clip eigenvalues below floor*max(eig), which bounds
+#            the condition number at exactly 1/sigma_stab_floor and leaves any Sigma
+#            already better-conditioned than that completely untouched. RECOMMENDED.
+#   "ridge"  Sigma + lambda*(tr Sigma/d)*I: lifts every eigenvalue; converges a bit
+#            more reliably but perturbs even well-conditioned regimes slightly.
+sigma_stab       <- "floor"     # "none" (default) | "floor" (recommended) | "ridge"
+
+sigma_stab_floor <- 1e-2       # floor only: condition-number cap = 1/floor.
+                               # 1e-3 -> cap 1000 (safe default: removes fit
+                               # failures, converges reliably). 1e-2 -> cap 100
+                               # (tightest control / best NRMSE_Kappa, but can hit
+                               # MaxIter benignly on borderline fits).
+
+sigma_stab_lambda <- 1e-2      # ridge only: relative ridge strength (fraction of
+                               # the matrix's own average variance tr(Sigma)/d).
+
 # Assemble the control list passed to estimate_MSAR(). These are applied via
 # options() INSIDE each parallel worker (options do not propagate to future
 # workers automatically), so this is the correct way to configure a parallel run.
@@ -151,7 +179,11 @@ lasso_control <- list(
   simmsar_lasso_nlambda        = lasso_nlambda,
   simmsar_lasso_fixedfolds     = lasso_fixedfolds,
   simmsar_lasso_reselect_iters = lasso_reselect_iters,
-  simmsar_lasso_reselect_every = lasso_reselect_every
+  simmsar_lasso_reselect_every = lasso_reselect_every,
+  # residual-covariance stabilization (see block above)
+  simmsar_sigma_stab           = sigma_stab,
+  simmsar_sigma_stab_floor     = sigma_stab_floor,
+  simmsar_sigma_stab_lambda    = sigma_stab_lambda
 )
 # Also apply in the main process (covers sequential runs / interactive fits;
 # the parallel workers get their own copy via estimate_MSAR(lasso_control=...)).
@@ -183,7 +215,7 @@ if (save_output && !dir.exists(output_dir)) {
 # IMPORTANT: This must be set BEFORE generate_timeseries() is called
 # All random operations (network generation, time series simulation,
 # model initialization) will be reproducible with this single seed
-set.seed(58396)
+set.seed(20260701)
 
 # =============================================================================
 # PARAMETER SUMMARY
@@ -237,6 +269,13 @@ if (identical(lasso_engine, "cvglmnet")) {
               lasso_reselect, lasso_lambda, lasso_refit, lasso_nfolds, lasso_nlambda, lasso_fixedfolds))
 } else {
   cat("LASSO:        bic (legacy; sparsity via min_edg_val threshold only)\n")
+}
+if (identical(sigma_stab, "floor")) {
+  cat(sprintf("Sigma stab:   floor (eigenvalue floor; condition cap = %.0f)\n", 1 / sigma_stab_floor))
+} else if (identical(sigma_stab, "ridge")) {
+  cat(sprintf("Sigma stab:   ridge (lambda = %.1e of tr(Sigma)/d)\n", sigma_stab_lambda))
+} else {
+  cat("Sigma stab:   none (raw residual covariance; Kappa = solve(Sigma) unregularized)\n")
 }
 cat("═══════════════════════════════════════════════════════════════\n")
 cat("\n")

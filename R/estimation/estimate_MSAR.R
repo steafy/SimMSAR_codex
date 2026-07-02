@@ -164,8 +164,44 @@ empty_regime_rows_schema <- function() {
     timesteps = integer(0), density = numeric(0), nodes = integer(0),
     regimes = integer(0), ts_id = integer(0), regime_id = integer(0),
     orig_Beta = list(), est_Beta = list(), orig_Kappa = list(),
-    orig_Sigma = list(), est_Sigma = list(), orig_Beta_ac = list()
+    orig_Sigma = list(), est_Sigma = list(), orig_Beta_ac = list(),
+    # --- Sigma/Kappa degeneracy diagnostics (uncommitted; see
+    #     docs/SIGMA_KAPPA_DEGENERACY_DIAGNOSIS.md). Per (matched) regime:
+    postmix           = numeric(0),  # effective obs count for this regime
+    postmix_frac      = numeric(0),  # share of total effective obs (sum-to-1 over regimes of a fit)
+    est_Sigma_rcond   = numeric(0),  # rcond of the stored est_Sigma (1/condition number)
+    est_Sigma_min_eig = numeric(0),  # smallest eigenvalue of est_Sigma
+    # --- fit-level, repeated on every regime row of the same fit:
+    gamma_entropy_mean = numeric(0), # mean per-timestep posterior entropy (nats), 0..log(M)
+    iter               = integer(0)  # EM iterations to convergence
   )
+}
+
+# -----------------------------------------------------------------------------
+# Regime-separation summaries from the smoothed posterior (model_fit$smoothedprob).
+# For the single-series pipeline (N.samples = 1, M > 1) smoothedprob is a
+# (T-1) x M matrix; for M == 1 it may be absent. Returns postmix (effective obs
+# count per regime, summed over time) and the mean per-timestep posterior entropy
+# (a separation-quality measure independent of the raw postmix sum: high entropy =
+# the model is chronically unsure which regime it is in). Estimated-regime order.
+fit_separation_summary <- function(smoothedprob, M, T_minus_1) {
+  if (M == 1 || is.null(smoothedprob)) {
+    return(list(postmix = T_minus_1, entropy_mean = 0))
+  }
+  # Reshape to a (rows x M) matrix of per-timestep posteriors. For N.samples = 1
+  # smoothedprob is already (T-1) x M; the 3D [N.samples, time, M] case is folded
+  # so the last (regime) dim is preserved as columns.
+  if (length(dim(smoothedprob)) == 3) {
+    d3 <- dim(smoothedprob)
+    P  <- matrix(aperm(smoothedprob, c(2, 1, 3)), ncol = d3[3])
+  } else {
+    P <- as.matrix(smoothedprob)
+  }
+  postmix <- colSums(P, na.rm = TRUE)
+  # per-row entropy H_t = -sum_j p_tj log p_tj (0 for degenerate rows)
+  logP <- ifelse(P > 0, log(P), 0)
+  H    <- -rowSums(P * logP, na.rm = TRUE)
+  list(postmix = postmix, entropy_mean = mean(H, na.rm = TRUE))
 }
 empty_fit_row_schema <- function() {
   tibble::tibble(
@@ -314,13 +350,33 @@ fit_one_replicate <- function(cell, rep, order, MaxIter, verbose) {
                                        "estimated Beta has zero variance in at least one regime")))
   }
   
+  # --- Sigma/Kappa degeneracy diagnostics (uncommitted; see doc) ----------
+  # Regime separation from the smoothed posterior (estimated-regime order), and
+  # per-regime conditioning of the STORED est_Sigma. postmix[est_idx] is the
+  # effective observation count that produced est_sigmas[[est_idx]]; the leading
+  # hypothesis is that low postmix drives the near-singular / magnitude-degenerate
+  # Kappa. rcond/min-eig are computed on exactly the matrix that analysis inverts.
+  sep <- fit_separation_summary(model_fit[["smoothedprob"]],
+                                cell$regimes_val, cell$timesteps_val - 1L)
+  postmix_vec  <- sep$postmix
+  postmix_frac <- postmix_vec / sum(postmix_vec)
+  entropy_mean <- sep$entropy_mean
+  em_iters     <- if (!is.null(model_fit[["Iter"]])) as.integer(model_fit[["Iter"]]) else NA_integer_
+  sig_rcond <- function(S) { S <- as.matrix(S); tryCatch(rcond(S), error = function(e) NA_real_) }
+  sig_mineig <- function(S) {
+    S <- as.matrix(S)
+    tryCatch(min(eigen(S, symmetric = TRUE, only.values = TRUE)$values),
+             error = function(e) NA_real_)
+  }
+
   # --- One raw row per regime (true-regime order 1..M) --------------------
   regime_rows <- vector("list", nrow(assigned_regimes))
   for (m in seq_len(nrow(assigned_regimes))) {
     orig_idx <- assigned_regimes[[m, 1]]   # true regime label (== m)
     est_idx  <- assigned_regimes[[m, 2]]   # matched estimated regime label
     orig_reg <- current_regimes[[paste0("Regime", orig_idx)]]
-    
+    est_S    <- est_sigmas[[est_idx]]
+
     regime_rows[[m]] <- tibble::tibble(
       timesteps = cell$timesteps_val, density = cell$density_val,
       nodes     = cell$nodes_val,     regimes = cell$regimes_val,
@@ -329,8 +385,14 @@ fit_one_replicate <- function(cell, rep, order, MaxIter, verbose) {
       est_Beta     = list(est_Betas_mat[[est_idx]]),
       orig_Kappa   = list(orig_reg[["kappa"]]),
       orig_Sigma   = list(orig_reg[["sigma"]]),
-      est_Sigma    = list(est_sigmas[[est_idx]]),
-      orig_Beta_ac = list(orig_reg[["Beta_ac"]])
+      est_Sigma    = list(est_S),
+      orig_Beta_ac = list(orig_reg[["Beta_ac"]]),
+      postmix            = postmix_vec[est_idx],
+      postmix_frac       = postmix_frac[est_idx],
+      est_Sigma_rcond    = sig_rcond(est_S),
+      est_Sigma_min_eig  = sig_mineig(est_S),
+      gamma_entropy_mean = entropy_mean,
+      iter               = em_iters
     )
   }
   regime_rows <- dplyr::bind_rows(regime_rows)
@@ -548,7 +610,12 @@ estimate_MSAR <- function(Density, N, M, T, n_ts, order, MaxIter, verbose, min_e
   class(msar_results) <- c("msar_results", class(msar_results))
   attr(msar_results, "fit_results") <- fit_results
   attr(msar_results, "failure_log") <- failure_log
-  
+  # Persist the exact LASSO/penalization config that produced this object, so a
+  # diagnostic run's engine settings never have to be reconstructed after the
+  # fact (see docs/SIGMA_KAPPA_DEGENERACY_DIAGNOSIS.md). NULL means library
+  # defaults (engine="bic") were in force.
+  attr(msar_results, "lasso_control") <- lasso_control
+
   msar_results
 }
 
