@@ -124,7 +124,7 @@ aggregate_to_sim_level <- function(corr_results, corr_cols) {
       Beta_ac_corr_pearson_z = safe_atanh(stats::weighted.mean(Beta_ac_corr_pearson, w = weight_BetaAC, na.rm = TRUE)),
       across(all_of(plain_z_cols), \(x) mean(x, na.rm = TRUE), .names = "{.col}"),
       w_Kappa = sum(weight_Kappa[!is.na(Kappa_corr)], na.rm = TRUE),
-      w_BetaAC = sum(weight_BetaAC, na.rm = TRUE),
+      w_BetaAC = sum(weight_BetaAC[!is.na(Beta_ac_corr_pearson)], na.rm = TRUE),
       .groups = "drop"
     ) %>%
     rename(
