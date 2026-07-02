@@ -48,19 +48,29 @@ source("R/utils/average_controllability.R")    # est_Beta_ac from stored est_Bet
 #                  inverse still explodes). Because NRMSE is an *absolute*
 #                  squared-error measure, a single such entry can inflate it by
 #                  orders of magnitude (observed max: NRMSE_Beta = 84.7,
-#                  NRMSE_Kappa = 8423), even though it does not detectably
-#                  distort Beta_corr / Kappa_corr / Beta_ac_corr_pearson
-#                  (checked empirically: zero overlap with the |Fisher z| > 5
-#                  rows for any of the three correlation outcomes, and the
-#                  correlation values themselves are unremarkable for the
-#                  magnitude-flagged rows). The gate below therefore NAs only
-#                  NRMSE_Beta / NRMSE_Kappa for the affected regime -- mirroring
-#                  the KAPPA_COND_MAX gate's "per metric, never the whole fit"
-#                  philosophy -- rather than excluding rows post hoc based on
-#                  the NRMSE value itself (which would be circular: selecting
+#                  NRMSE_Kappa = 8423). NRMSE is the most SENSITIVE derived
+#                  metric to such an entry (empirically it was the only one
+#                  visibly distorted -- zero overlap with the |Fisher z| > 5
+#                  rows for the correlation outcomes), but a regime whose
+#                  thresholded estimate contains a numerically-degenerate edge
+#                  is not a trustworthy recovery datapoint for ANY outcome. The
+#                  gate below therefore NAs ALL derived metrics of the affected
+#                  side for that regime -- for Beta: NRMSE_Beta, Beta_corr,
+#                  Beta_sen, Beta_spec, Beta_ac_corr_pearson, Beta_ac_corr_spearman;
+#                  for Kappa: NRMSE_Kappa, Kappa_corr, Kappa_sen, Kappa_spec --
+#                  mirroring the KAPPA_COND_MAX gate's "per side, per regime,
+#                  never the whole fit" philosophy. (This is stricter than the
+#                  original NRMSE-only gate: the correlation/sens/spec values
+#                  were checked to be UNREMARKABLE for these rows, so gating them
+#                  removes little signal, but it keeps every reported outcome on
+#                  a consistent, degeneracy-free footing rather than reporting a
+#                  correlation for a regime whose NRMSE we already declared
+#                  untrustworthy.) It still does NOT exclude rows post hoc based
+#                  on the NRMSE value itself (which would be circular: selecting
 #                  on the outcome you are trying to describe, and would
 #                  artificially hide exactly the hardest design cells this
-#                  metric is meant to characterise).
+#                  metric is meant to characterise) -- the trigger is the raw
+#                  magnitude of the thresholded estimate, not any scored outcome.
 #                  Default 10 (i.e. 10x the maximum |true edge weight|) was
 #                  derived empirically from the full distribution of
 #                  max(|thresholded entry|) across all regime-rows: the 95th
@@ -137,16 +147,32 @@ compute_recovery_metrics <- function(MSAR_dynamics_list,
     Beta_spec[r] <- bss[["specificity"]]
     NRMSE_Beta[r] <- rmse_true_edges(as.vector(orig_Beta), as.vector(est_Beta)) / EDGE_VALUE_RANGE
 
+    # Average controllability from the thresholded est_Beta (deterministic).
+    # Computed BEFORE the plausibility gate so that all Beta-derived metrics
+    # (corr/sens/spec/NRMSE/AC-corr) exist and can be NA'd together in the one
+    # gate block below when the estimate is magnitude-degenerate.
+    ac <- average_controllability(est_Beta, T_ac = AC_HORIZON)
+    est_Beta_ac[[r]] <- ac
+    Beta_ac_corr_pearson[r]  <- cor(orig_Beta_ac, ac, method = "pearson")
+    Beta_ac_corr_spearman[r] <- cor(orig_Beta_ac, ac, method = "spearman")
+
     # Plausibility gate (see max_plausible_magnitude doc above): thresholding
     # only zeroes small entries, so a single numerically-degenerate large one
     # (e.g. an under-regularized regression edge) survives untouched and can
-    # inflate NRMSE_Beta by orders of magnitude. Flagged per regime; nulls
-    # ONLY NRMSE_Beta -- Beta_corr/Beta_sen/Beta_spec/Beta_ac_corr_pearson
-    # (already computed above from the same est_Beta) are left untouched,
-    # since they were checked empirically to stay unaffected (see doc above).
+    # inflate NRMSE_Beta by orders of magnitude. Flagged per regime; NAs ALL
+    # Beta-derived metrics for that regime -- NRMSE_Beta, Beta_corr, Beta_sen,
+    # Beta_spec, Beta_ac_corr_pearson, Beta_ac_corr_spearman (all computed above
+    # from the same est_Beta / its controllability) -- since a regime carrying a
+    # numerically-degenerate edge is not a trustworthy recovery datapoint for any
+    # outcome (see doc above). Per regime, never the whole fit; never affects Kappa.
     max_abs_beta <- max(abs(est_Beta))
     if (!is.finite(max_abs_beta) || max_abs_beta > max_plausible_magnitude) {
-      NRMSE_Beta[r] <- NA_real_
+      NRMSE_Beta[r]            <- NA_real_
+      Beta_corr[r]             <- NA_real_
+      Beta_sen[r]              <- NA_real_
+      Beta_spec[r]             <- NA_real_
+      Beta_ac_corr_pearson[r]  <- NA_real_
+      Beta_ac_corr_spearman[r] <- NA_real_
       magnitude_records[[length(magnitude_records) + 1L]] <- tibble::tibble(
         timesteps = MSAR_dynamics_list$timesteps[r],
         density   = MSAR_dynamics_list$density[r],
@@ -158,12 +184,6 @@ compute_recovery_metrics <- function(MSAR_dynamics_list,
         max_abs_value = max_abs_beta
       )
     }
-
-    # Average controllability from the thresholded est_Beta (deterministic).
-    ac <- average_controllability(est_Beta, T_ac = AC_HORIZON)
-    est_Beta_ac[[r]] <- ac
-    Beta_ac_corr_pearson[r]  <- cor(orig_Beta_ac, ac, method = "pearson")
-    Beta_ac_corr_spearman[r] <- cor(orig_Beta_ac, ac, method = "spearman")
 
     # --- Kappa: invert est_Sigma, gate on condition number ----------------------
     inv <- tryCatch(solve(est_Sigma), error = function(e) NULL)
@@ -197,13 +217,18 @@ compute_recovery_metrics <- function(MSAR_dynamics_list,
       # having uniformly tiny eigenvalues, so its inverse still explodes in
       # absolute terms. Off-diagonal only, matching what NRMSE_Kappa scores
       # (the diagonal is a different, unbounded inverse-variance scale and is
-      # never thresholded either -- see threshold_kappa_offdiag()). Nulls
-      # ONLY NRMSE_Kappa; Kappa_corr/Kappa_sen/Kappa_spec (already computed
-      # above from the same kap) are left untouched (checked empirically).
+      # never thresholded either -- see threshold_kappa_offdiag()). NAs ALL
+      # Kappa-derived metrics for that regime -- NRMSE_Kappa, Kappa_corr,
+      # Kappa_sen, Kappa_spec (all computed above from the same kap) -- since a
+      # regime carrying a numerically-degenerate precision entry is not a
+      # trustworthy recovery datapoint for any Kappa outcome (see doc above).
       off_mask <- !diag(TRUE, nrow(kap))
       max_abs_kappa <- max(abs(kap[off_mask]))
       if (!is.finite(max_abs_kappa) || max_abs_kappa > max_plausible_magnitude) {
         NRMSE_Kappa[r] <- NA_real_
+        Kappa_corr[r]  <- NA_real_
+        Kappa_sen[r]   <- NA_real_
+        Kappa_spec[r]  <- NA_real_
         magnitude_records[[length(magnitude_records) + 1L]] <- tibble::tibble(
           timesteps = MSAR_dynamics_list$timesteps[r],
           density   = MSAR_dynamics_list$density[r],
@@ -282,9 +307,10 @@ compute_recovery_metrics <- function(MSAR_dynamics_list,
     by_reason <- table(magnitude_validity_log$reason)
     cat("  ", paste(names(by_reason), by_reason, sep = ": ", collapse = "; "), "\n")
   }
-  cat("Only the affected NRMSE_Beta / NRMSE_Kappa value is set to NA -- the\n")
-  cat("corresponding correlation/sens/spec/AC-corr metrics for the same regime\n")
-  cat("are left untouched (checked empirically; see doc above). See\n")
+  cat("ALL derived metrics of the affected side are set to NA for the flagged\n")
+  cat("regime -- Beta: NRMSE_Beta, Beta_corr, Beta_sen/spec, Beta_ac_corr_pearson/\n")
+  cat("spearman; Kappa: NRMSE_Kappa, Kappa_corr, Kappa_sen/spec -- per regime,\n")
+  cat("never the whole fit, and the two sides are gated independently. See\n")
   cat("summarize_magnitude_validity().\n")
 
   MSAR_dynamics_list
@@ -338,8 +364,10 @@ summarize_sigma_validity <- function(MSAR_dynamics_list,
 # was for Beta in the first place, but the thresholded estimate still contains
 # at least one entry more than `max_plausible_magnitude` times the generating
 # range -- a numerically degenerate single edge, not a uniformly worse fit.
-# Only NRMSE_Beta / NRMSE_Kappa are NA'd for that regime; everything else
-# (Beta_corr, Kappa_corr, sens/spec, Beta_ac_corr_pearson) is left untouched.
+# ALL derived metrics of the affected side are NA'd for that regime (Beta:
+# NRMSE_Beta, Beta_corr, Beta_sen/spec, Beta_ac_corr_pearson/spearman; Kappa:
+# NRMSE_Kappa, Kappa_corr, Kappa_sen/spec) -- per regime, never the whole fit,
+# the two sides gated independently.
 summarize_magnitude_validity <- function(MSAR_dynamics_list,
                                          by = c("timesteps", "density", "nodes", "regimes")) {
 
