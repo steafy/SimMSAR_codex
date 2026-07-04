@@ -17,6 +17,59 @@
 # `begin`/`end` stay inside (0, 1) so the lightest yellow and darkest purple
 # (low-contrast against a white page / the panel grid, respectively) are
 # excluded.
+# --- Typography --------------------------------------------------------------
+# Base font for every figure. A clean, geometric-ish sans in the spirit of the
+# Poppins/Inter/Manrope references, using what is actually installed on the
+# machine (none of those three are). "Segoe UI" is the modern Windows humanist
+# sans and renders correctly through cairo_pdf; the fallbacks cover other boxes.
+THESIS_FONT <- local({
+  installed <- tryCatch(systemfonts::system_fonts()$family, error = function(e) character(0))
+  pick <- c("Poppins", "Inter", "Manrope", "Segoe UI", "Calibri")
+  hit  <- pick[pick %in% installed]
+  if (length(hit)) hit[1] else ""   # "" => graphics-device default sans
+})
+
+# --- Panel "cards" -----------------------------------------------------------
+# Soft panel fill on a white plot background, so each panel reads as a distinct
+# rounded card (matching the reference dashboards). Rounded corners come from
+# elementalist::element_rect_round(); it is GitHub-only
+# (remotes::install_github("teunbrand/elementalist")), so if it is not available
+# we fall back to a flat soft-fill rect and the pipeline still runs.
+PANEL_FILL      <- "#F6F6F9"
+PANEL_BORDER    <- "grey90"  # hairline around each card
+PANEL_BORDER_LW <- 0.2       # border thickness (bump for a bolder frame)
+PANEL_RADIUS    <- 6         # corner radius in pt
+.have_elementalist <- requireNamespace("elementalist", quietly = TRUE)
+if (.have_elementalist) suppressPackageStartupMessages(library(elementalist))
+
+# The card FILL goes on panel.background and the STROKE on panel.border, on
+# purpose. panel.background is drawn clipped to the panel rectangle, so a stroke
+# there loses its straight edges (only the inward-curving corners survive); a
+# border-only element on color = NA has nothing to clip. panel.border is drawn
+# UNclipped, so the rounded stroke shows on all four edges. Splitting them is
+# what makes the full hairline appear.
+panel_card_bg <- function(radius = PANEL_RADIUS) {
+  if (.have_elementalist) {
+    elementalist::element_rect_round(radius = unit(radius, "pt"), fill = PANEL_FILL, color = NA)
+  } else {
+    element_rect(fill = PANEL_FILL, color = NA)
+  }
+}
+panel_card_border <- function(radius = PANEL_RADIUS) {
+  if (.have_elementalist) {
+    elementalist::element_rect_round(radius = unit(radius, "pt"), fill = NA,
+                                     color = PANEL_BORDER, linewidth = PANEL_BORDER_LW)
+  } else {
+    element_rect(fill = NA, color = PANEL_BORDER, linewidth = PANEL_BORDER_LW)
+  }
+}
+
+# --- Colour + shape ----------------------------------------------------------
+# viridis: perceptually uniform AND distinguishable under all common forms of
+# colour-vision deficiency. Kept for 4-level mappings (the 4 outcomes / Regimes),
+# where it is already colourblind-verified. begin/end stay inside (0, 1) so the
+# lightest yellow / darkest purple (low-contrast on white / on the panel fill)
+# are excluded.
 THESIS_VIRIDIS_RANGE <- c(0.08, 0.85)
 
 scale_color_thesis_d <- function(...) {
@@ -26,30 +79,66 @@ scale_fill_thesis_d <- function(...) {
   scale_fill_viridis_d(begin = THESIS_VIRIDIS_RANGE[1], end = THESIS_VIRIDIS_RANGE[2], ...)
 }
 
-# Redundant shape coding for Nodes, IN ADDITION to colour: keeps figures
-# legible in greyscale printouts/photocopies and gives a second,
-# colour-independent cue on top of the colourblind-safe palette -- the
-# standard "don't rely on colour alone" accessibility recommendation.
-NODE_SHAPES <- c("4" = 16, "6" = 17, "8" = 15)  # filled circle / triangle / square
+# Okabe-Ito colourblind-safe triple for the 3-level Nodes mapping (blue / orange
+# / green). Distinct hues at well-separated luminance under deuteranopia /
+# protanopia / tritanopia. Legend entries use the actual node counts ("N = 4"),
+# mirroring the "M = 1" convention for Regimes.
+OKABE_ITO_NODES <- c("4" = "#0072B2", "6" = "#E69F00", "8" = "#009E73")
+NODE_LABELS     <- c("4" = "N = 4",   "6" = "N = 6",   "8" = "N = 8")
 
-# One shared theme, used by every figure below. Close to theme_minimal()
-# (clean, low ink-to-data ratio, prints well) with slightly bolder
-# titles/strips so figures stay legible at thesis page size.
+scale_color_thesis_nodes <- function(...) {
+  scale_color_manual(values = OKABE_ITO_NODES, labels = NODE_LABELS, ...)
+}
+scale_fill_thesis_nodes <- function(...) {
+  scale_fill_manual(values = OKABE_ITO_NODES, labels = NODE_LABELS, ...)
+}
+
+# Redundant shape coding for Nodes, IN ADDITION to colour: keeps figures legible
+# in greyscale printouts/photocopies -- the "don't rely on colour alone"
+# recommendation. Fillable variants (circle/triangle/square) so points can be
+# drawn as a coloured fill with a white stroke (shape 21/24/22).
+NODE_SHAPES <- c("4" = 21, "6" = 24, "8" = 22)
+
+# --- Facet-strip labels ------------------------------------------------------
+# Density on rows (right-hand strips), labelled directly as low/mid/high so no
+# separate super-label is needed. Regimes on columns as "M = 1" ... "M = 4".
+DENSITY_LABELS <- c("0.25" = "niedrige Dichte",
+                    "0.5"  = "mittlere Dichte",
+                    "0.75" = "hohe Dichte")
+
+density_labeller <- function(x) {
+  out <- DENSITY_LABELS[as.character(x)]
+  ifelse(is.na(out), paste0("Dichte: ", x), out)
+}
+regime_labeller <- function(x) paste0("M = ", x)
+
+# --- Shared theme ------------------------------------------------------------
+# One theme, used by every figure below. theme_minimal() base (clean, low
+# ink-to-data ratio) refreshed to match the reference dashboards: rounded
+# soft-fill panel cards on white, plain bold strip text (no grey box), a single
+# faint dotted horizontal guide, and the geometric base font.
 theme_thesis <- function(base_size = 11) {
-  theme_minimal(base_size = base_size) +
+  theme_minimal(base_size = base_size, base_family = THESIS_FONT) +
     theme(
-      legend.position   = "top",
-      legend.title      = element_text(face = "bold", size = rel(0.95)),
-      legend.text       = element_text(size = rel(0.85)),
-      strip.text        = element_text(face = "bold", size = rel(0.85)),
-      strip.background  = element_rect(fill = "grey93", color = NA),
-      panel.grid.minor  = element_blank(),
-      panel.grid.major  = element_line(color = "grey88", linewidth = 0.3),
-      plot.title        = element_text(face = "bold", hjust = 0.5, size = rel(1.15)),
-      plot.subtitle     = element_text(hjust = 0.5, color = "grey35", size = rel(0.9)),
-      plot.caption      = element_text(color = "grey45", size = rel(0.75), hjust = 0),
-      axis.title        = element_text(face = "bold"),
-      axis.text.x       = element_text(angle = 45, hjust = 1)
+      text               = element_text(family = THESIS_FONT),
+      legend.position    = "top",
+      legend.title       = element_text(family = THESIS_FONT, face = "bold", size = rel(0.95)),
+      legend.text        = element_text(family = THESIS_FONT, size = rel(0.85)),
+      strip.text         = element_text(family = THESIS_FONT, face = "bold", size = rel(0.9)),
+      strip.background   = element_blank(),   # plain-text headers, no grey box
+      strip.placement    = "outside",
+      panel.background   = panel_card_bg(),     # rounded soft-fill "card"
+      panel.border       = panel_card_border(), # rounded hairline frame (unclipped)
+      plot.background     = element_rect(fill = "white", color = NA),
+      panel.grid.minor   = element_blank(),
+      panel.grid.major.x = element_blank(),
+      panel.grid.major.y = element_line(color = "grey85", linewidth = 0.3, linetype = "dotted"),
+      panel.spacing      = unit(0.9, "lines"),
+      plot.title         = element_text(family = THESIS_FONT, face = "bold", hjust = 0.5, size = rel(1.15)),
+      plot.subtitle      = element_text(family = THESIS_FONT, hjust = 0.5, color = "grey35", size = rel(0.9)),
+      plot.caption       = element_text(family = THESIS_FONT, color = "grey45", size = rel(0.75), hjust = 0),
+      axis.title         = element_text(family = THESIS_FONT, face = "bold"),
+      axis.text.x        = element_text(angle = 45, hjust = 1)
     )
 }
 
@@ -95,16 +184,17 @@ make_line_plots <- function(corr_results, cols) {
       # stays as easy to follow at a glance as in the old line plot.
       stat_summary(
         fun = median, geom = "line", position = dodge,
-        aes(group = Nodes), linewidth = 0.6
+        aes(group = Nodes), linewidth = 0.6,
+        lineend = "round", linejoin = "round"
       ) +
       coord_cartesian(ylim = c(NA, 1)) +
       facet_grid(Density ~ Regimes,
                  labeller = labeller(
-                   Density = function(x) paste0("Dichte: ", x),
-                   Regimes = function(x) paste0("Regime: ", x)
+                   Density = density_labeller,
+                   Regimes = regime_labeller
                  )) +
-      scale_color_thesis_d() +
-      scale_fill_thesis_d() +
+      scale_color_thesis_nodes() +
+      scale_fill_thesis_nodes() +
       labs(
         title    = title,
         subtitle = "Boxplot \u00fcber alle Replikationen: Median, IQR, Whisker (1.5\u00d7IQR), Ausrei\u00dfer",
@@ -182,21 +272,22 @@ make_senspec_plots <- function(corr_results) {
         data = summary_data,
         aes(x = Timesteps, y = mean_val,
             color = Nodes, group = interaction(Nodes, Metric), linetype = Metric),
-        position = dodge
+        position = dodge, lineend = "round", linejoin = "round"
       ) +
       geom_point(
         data = summary_data,
-        aes(x = Timesteps, y = mean_val, color = Nodes, shape = Nodes),
-        position = dodge, size = 1.8
+        aes(x = Timesteps, y = mean_val, fill = Nodes, shape = Nodes),
+        position = dodge, size = 3, stroke = 0.5, color = "white"
       ) +
       coord_cartesian(ylim = c(0, 1)) +
       facet_grid(Density ~ Regimes,
                  labeller = labeller(
-                   Density = function(x) paste0("Dichte: ", x),
-                   Regimes = function(x) paste0("Regime: ", x)
+                   Density = density_labeller,
+                   Regimes = regime_labeller
                  )) +
-      scale_color_thesis_d() +
-      scale_shape_manual(values = NODE_SHAPES) +
+      scale_color_thesis_nodes() +
+      scale_fill_thesis_nodes() +
+      scale_shape_manual(values = NODE_SHAPES, labels = NODE_LABELS) +
       labs(
         title    = paste0("Sensitivit\u00e4t & Spezifit\u00e4t: ",
                           if (net == "Beta") "temporales Netzwerk (Beta)" else "kontempor\u00e4res Netzwerk (Kappa)"),
