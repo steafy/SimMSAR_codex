@@ -138,5 +138,13 @@ make_senspec_plots(corr_results)
 # FINAL SUMMARY
 print_final_summary(all_results, corr_cols, bias)
 
-# PART 8: Coefficient plots
-make_coefficient_plots(all_results, corr_cols)
+# PART 8: Coefficient plots (RQ1-3 primary models + RQ4 as a 4th outcome)
+make_coefficient_plots(all_results, corr_cols, seq_recovery)
+
+# PART 8.1: Model-prediction figures (population predictions, re.form = NA)
+#   Fig 2: predicted recovery over T, one line per Regime, all four outcomes.
+#   Fig 3: Nodes (4 vs 8) effect on recovery across Regimes, A and K.
+#   Fig 4: Density x Nodes x Regime grid for A, K and Kontrollierbarkeit.
+make_prediction_curves(all_results, seq_recovery, dat_sim)
+make_nodes_regime_profile(all_results, dat_sim)
+make_density_nodes_regime_grid(all_results, dat_sim)
