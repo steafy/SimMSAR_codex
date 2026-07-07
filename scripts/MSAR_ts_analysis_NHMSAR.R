@@ -57,7 +57,7 @@ warmup <- 50                  # Number of warmup time steps (discarded from anal
 
 totTime <- T + warmup         # Total time steps including warmup
 
-n_ts <- 50                     # Number of time series to generate per condition
+n_ts <- 150                   # Number of time series to generate per condition
                               # Higher = more statistical power but slower
 
 # -----------------------------------------------------------------------------
