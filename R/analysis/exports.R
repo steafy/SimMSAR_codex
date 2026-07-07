@@ -360,3 +360,75 @@ export_sequence_recovery_table <- function(seq_recovery) {
   cat("Exported RQ4 results (", model_label, ") to", RESULTS_DIR, "\n")
   invisible(coef_df_export)
 }
+
+export_main_effects_table <- function(all_results, seq_recovery, corr_cols) {
+  
+  main_eff <- get_averaged_main_effects(all_results, seq_recovery, corr_cols)
+  
+  tbl <- main_eff %>%
+    mutate(
+      term = factor(term, levels = MAIN_EFFECTS_TERM_ORDER),
+      sig_star = dplyr::case_when(
+        p_adj < 0.001 ~ "***",
+        p_adj < 0.01  ~ "**",
+        p_adj < 0.05  ~ "*",
+        TRUE          ~ ""
+      )
+    ) %>%
+    arrange(outcome, term) %>%
+    transmute(
+      Outcome  = outcome,
+      Term     = as.character(term),
+      Estimate = round(estimate, 3),
+      SE       = round(se, 3),
+      CI95     = sprintf("[%.3f, %.3f]", ci_lo, ci_hi),
+      p_adj    = round(p_adj, 3),
+      sig      = sig_star
+    )
+  
+  group_sizes <- table(tbl$Outcome)
+  group_sizes <- group_sizes[group_sizes > 0]
+  
+  tbl_body <- tbl %>% select(-Outcome)
+  
+  kable(tbl_body,
+        caption   = "Regime-gemittelte Haupteffekte (emtrends)",
+        digits    = 3,
+        format    = "html",
+        row.names = FALSE,
+        col.names = c("Term", "Estimate", "SE", "95%-KI", "p (BH-adj.)", "sig")) %>%
+    kable_styling(bootstrap_options = c("striped", "hover")) %>%
+    pack_rows(index = group_sizes) %>%
+    save_kable(file = results_file("main_effects_averaged.html"))
+  
+  latex_tbl <- kable(tbl_body,
+                     format    = "latex",
+                     booktabs  = TRUE,
+                     digits    = 3,
+                     row.names = FALSE,
+                     escape    = FALSE,
+                     col.names = c("Term", "Estimate", "SE", "95\\%-KI", "$p$ (BH-adj.)", "sig"),
+                     caption   = "Regime-gemittelte Haupteffekte (emtrends) und rohe Regime-Kontraste der prim\\\"aren LMMs.",
+                     label     = "main_effects_averaged",
+                     linesep   = "") %>%
+    kable_styling(latex_options = c("hold_position")) %>%
+    pack_rows(index = group_sizes) %>%
+    footnote(
+      general = paste(
+        "logT, Density und Nodes sind \\\\emtrends\\\\-gemittelte Slopes",
+        "(gleichgewichtet über alle Stufen von Regimes); die Regimes-Kontraste",
+        "sind rohe Modellkoeffizienten (M = 1 als Referenz; mit * gekennzeichnete",
+        "RQ4-Kontraste relativ zu M = 2, da M = 1 dort ausgeschlossen ist). Die",
+        "BH-Korrektur bezieht sich nur auf die hier gezeigten Haupteffekt-Terme",
+        "je Outcome und ist daher nicht direkt mit den $p$-Werten der",
+        "vollst\\\"andigen Modelltabellen vergleichbar."
+      ),
+      threeparttable = TRUE,
+      escape = FALSE
+    )
+  
+  writeLines(as.character(latex_tbl), results_file("main_effects_averaged.tex"))
+  
+  cat("Exported regime-averaged main-effects table to", RESULTS_DIR, "\n")
+  invisible(tbl)
+}
