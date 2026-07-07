@@ -155,8 +155,8 @@ scale_fill_thesis_outcome <- function(...) {
 # retuning the line-plot dots never silently resizes the forest-plot dots and
 # vice versa. Figure 3 (the dumbbell) overrides both with larger points -- a
 # lollipop chart needs prominent markers.
-THESIS_POINT_SIZE      <- 1.4   # line/prediction figures (2, 3, 4): uniform dots
-THESIS_LINEWIDTH       <- 0.7   # line/prediction figures (2, 3, 4)
+THESIS_POINT_SIZE      <- 1.5   # line/prediction figures (2, 3, 4): uniform dots
+THESIS_LINEWIDTH       <- 0.9   # line/prediction figures (2, 3, 4)
 THESIS_COEF_POINT_SIZE <- 3     # coefficient forest plot (1), controlled apart
 
 # --- Opacity knobs (all independent) -----------------------------------------
@@ -259,10 +259,10 @@ make_line_plots <- function(corr_results, cols) {
 
     title <- switch(
       col_name,
-      "Beta_corr"             = "Wiederherstellung des temporalen Netzwerks (Beta)",
-      "Kappa_corr"            = "Wiederherstellung des kontempor\u00e4ren Netzwerks (Kappa)",
-      "Beta_ac_corr_pearson"  = "Wiederherstellung der durchschnittlichen Kontrollierbarkeit (Pearson)",
-      "Beta_ac_corr_spearman" = "Wiederherstellung der durchschnittlichen Kontrollierbarkeit (Spearman)"
+      "A_corr"           = "Schätzgenauigkeit des temporalen Netzwerks (A)",
+      "K_corr"           = "Schätzgenauigkeit des kontempor\u00e4ren Netzwerks (K)",
+      "AC_corr_pearson"  = "Schätzgenauigkeit des durchschnittlichen Kontrollierbarkeit",
+      "AC_corr_spearman" = "Schätzgenauigkeit der durchschnittlichen Kontrollierbarkeit (Spearman)"
     )
 
     # Median line + empirical IQR (25th-75th percentile) ribbon per Nodes group,
@@ -321,9 +321,10 @@ make_line_plots <- function(corr_results, cols) {
       theme(
         plot.margin = margin(t = 10, r = 10, b = 10, l = 10),
         panel.spacing = unit(0.15, "in")
-      )
+      ) +
+    theme(aspect.ratio = 1)
 
-    output_file <- plots_file(paste0(col_name, "_plot_with_labels.pdf"))
+    output_file <- plots_file(paste0(col_name, "_plot.pdf"))
 
     # cairo_pdf instead of the default pdf() device: the base device's font-
     # metric calculation assumes a single-byte locale and mangles multi-byte
@@ -337,7 +338,7 @@ make_line_plots <- function(corr_results, cols) {
       width    = 10,
       height   = 8,
       units    = "in",
-      dpi      = 600
+      dpi      = 800
     )
 
     message("saved: ", output_file)
@@ -430,7 +431,7 @@ make_senspec_plots <- function(corr_results) {
       width    = 10,
       height   = 8,
       units    = "in",
-      dpi      = 600
+      dpi      = 800
     )
 
     message("saved: ", output_file)
@@ -462,6 +463,15 @@ make_senspec_plots <- function(corr_results) {
 # Computed ONCE and returned tidy (outcome, term, estimate, se, ci_lo, ci_hi,
 # p, sig) so the compact main-effects plot and the full plot's "Haupteffekte"
 # facet are fed from the exact same numbers and can never silently disagree.
+
+# Shared top-to-bottom / row order for the six (RQ1-3) or five (RQ4) main-
+# effect terms. Used by make_coefficient_plots() (y-axis order) AND
+# export_main_effects_table() (row order) so the plot and its companion
+# table can never silently diverge in ordering.
+MAIN_EFFECTS_TERM_ORDER <- c("logT", "Density", "Nodes",
+                             "Regimes2", "Regimes3", "Regimes4",
+                             "Regimes3*", "Regimes4*")
+
 get_averaged_main_effects <- function(all_results, seq_recovery, corr_cols) {
 
   # Asymptotic (z-based) inference: matches the 1.96*SE CIs used everywhere else
@@ -540,7 +550,8 @@ get_averaged_main_effects <- function(all_results, seq_recovery, corr_cols) {
   # thesis notation via the shared clean_term() ("Density_s" -> "Density").
   res <- res %>%
     group_by(outcome) %>%
-    mutate(sig = ifelse(p.adjust(p, method = "BH") < 0.05, "p < .05", "n.s.")) %>%
+    mutate(p_adj = p.adjust(p, method = "BH"),
+           sig   = ifelse(p_adj < 0.05, "p < .05", "n.s.")) %>%
     ungroup()
   res$term    <- clean_term(res$term)
   res$outcome <- factor(res$outcome, levels = unname(OUTCOME_LABELS))
@@ -554,9 +565,7 @@ make_coefficient_plots <- function(all_results, corr_cols, seq_recovery = NULL) 
 
   # Top-to-bottom order of main-effect terms on the y-axis (RQ4's starred
   # Regimes contrasts sit just below the shared M=1-referenced ones).
-  main_order <- c("logT", "Density", "Nodes",
-                  "Regimes2", "Regimes3", "Regimes4",
-                  "Regimes3*", "Regimes4*")
+  main_order <- MAIN_EFFECTS_TERM_ORDER
 
   # --- Averaged main effects (shared source for both plots) ------------------
   main_eff <- get_averaged_main_effects(all_results, seq_recovery, corr_cols) %>%
@@ -668,7 +677,7 @@ make_coefficient_plots <- function(all_results, corr_cols, seq_recovery = NULL) 
     theme(panel.grid.minor = element_blank())
 
   ggsave(plots_file("coefficient_plot_main_effects.pdf"),
-         plot = p_coef_main, device = cairo_pdf, width = 8, height = 5.5, dpi = 600)
+         plot = p_coef_main, device = cairo_pdf, width = 8, height = 5.5, dpi = 800)
 
   message("Coefficient plots saved to ", PLOTS_DIR)
 
@@ -766,22 +775,24 @@ make_prediction_curves <- function(all_results, seq_recovery, dat_sim) {
     # SHARED (fixed) y-axis across all four outcomes so the curves are directly
     # comparable panel-to-panel -- an equal predicted recovery sits at the same
     # height everywhere, rather than each facet zooming to its own range.
-    facet_wrap(~ outcome, nrow = 1) +
+    facet_wrap(~ outcome,  nrow = 2, ncol = 2) +
     scale_x_log10(breaks = THESIS_T_POINTS, labels = THESIS_T_POINTS) +
     scale_color_thesis_d(drop = FALSE, limits = lvl_reg, labels = regime_labeller) +
     scale_fill_thesis_d(drop = FALSE, limits = lvl_reg, labels = regime_labeller) +
     labs(
-      title    = "Vorhergesagte Wiederherstellung über die Zeitreihenlänge",
+      title    = "Interaktion von Regimezahl und Zeitreihenlänge",
       x        = "Zeitschritte (T, log-skaliert)",
-      y        = "Vorhergesagte Wiederherstellung (r bzw. κ)",
+      y        = "Vorhergesagtes Outcome (r bzw. κ)",
       color    = "Regime",
       fill     = "Regime"
     ) +
-    theme_thesis()
+    theme_thesis() + 
+    theme(aspect.ratio = 1)
+    
 
-  ggsave(plots_file("predicted_recovery_over_timesteps_by_regime.pdf"),
-         plot = p, device = cairo_pdf, width = 12, height = 4.5, dpi = 600)
-  message("saved: ", plots_file("predicted_recovery_over_timesteps_by_regime.pdf"))
+  ggsave(plots_file("regimes_x_timesteps.pdf"),
+         plot = p, device = cairo_pdf, width = 9, height = 9, dpi = 800)
+  message("saved: ", plots_file("regimes_x_timesteps.pdf"))
 
   invisible(p)
 }
@@ -865,18 +876,18 @@ make_nodes_regime_profile <- function(all_results, dat_sim) {
     scale_fill_manual(values = fig3_line_cols, labels = NODE_LABELS[c("4", "8")]) +
     scale_y_continuous(expand = expansion(mult = c(0.06, 0.16))) +
     labs(
-      title    = "Knoteneffekt auf die Wiederherstellung je Regime",
+      title    = "Interaktion von Regime- und Node-Anzahl",
       x        = "Regime",
-      y        = "Vorhergesagte Korrelationen (r)",
+      y        = "Vorhergesagte Korrelationen",
       color    = "Nodes",
       fill     = "Nodes"
     ) +
     theme_thesis() +
     theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
 
-  ggsave(plots_file("node_effect_on_recovery_by_regime.pdf"),
-         plot = p, device = cairo_pdf, width = 9, height = 5.5, dpi = 600)
-  message("saved: ", plots_file("node_effect_on_recovery_by_regime.pdf"))
+  ggsave(plots_file("node_x_regimes.pdf"),
+         plot = p, device = cairo_pdf, width = 9, height = 5.5, dpi = 800)
+  message("saved: ", plots_file("node_x_regimes.pdf"))
 
   invisible(p)
 }
@@ -934,17 +945,17 @@ make_density_nodes_regime_grid <- function(all_results, dat_sim) {
     scale_color_manual(values = fig4_node_cols, labels = NODE_LABELS[c("4", "8")]) +
     scale_fill_manual(values = fig4_node_cols, labels = NODE_LABELS[c("4", "8")]) +
     labs(
-      title = "Wiederherstellung nach Dichte, Knotenzahl und Regime",
+      title = "Interaktion von Dichte, Node- und Regime-Anzahl",
       x     = "Dichte",
-      y     = "Vorhergesagte Korrelation (r)",
+      y     = "Vorhergesagte Korrelationen",
       color = "Nodes",
       fill  = "Nodes"
     ) +
     theme_thesis()
 
-  ggsave(plots_file("recovery_by_density_and_nodes_across_regimes.pdf"),
-         plot = p, device = cairo_pdf, width = 10, height = 8, dpi = 600)
-  message("saved: ", plots_file("recovery_by_density_and_nodes_across_regimes.pdf"))
+  ggsave(plots_file("density_x_nodes_x_regimes.pdf"),
+         plot = p, device = cairo_pdf, width = 10, height = 8, dpi = 800)
+  message("saved: ", plots_file("density_x_nodes_x_regimes.pdf"))
 
   invisible(p)
 }
