@@ -259,10 +259,10 @@ make_line_plots <- function(corr_results, cols) {
 
     title <- switch(
       col_name,
-      "A_corr"           = "Schätzgenauigkeit des temporalen Netzwerks (A)",
-      "K_corr"           = "Schätzgenauigkeit des kontempor\u00e4ren Netzwerks (K)",
-      "AC_corr_pearson"  = "Schätzgenauigkeit des durchschnittlichen Kontrollierbarkeit",
-      "AC_corr_spearman" = "Schätzgenauigkeit der durchschnittlichen Kontrollierbarkeit (Spearman)"
+      "Beta_corr"           = "Schätzgenauigkeit des temporalen Netzwerks (A)",
+      "Kappa_corr"           = "Schätzgenauigkeit des kontempor\u00e4ren Netzwerks (K)",
+      "Beta_ac_corr_pearson"  = "Schätzgenauigkeit des durchschnittlichen Kontrollierbarkeit",
+      "Beta_ac_corr_spearman" = "Schätzgenauigkeit der durchschnittlichen Kontrollierbarkeit (Spearman)"
     )
 
     # Median line + empirical IQR (25th-75th percentile) ribbon per Nodes group,
@@ -324,7 +324,18 @@ make_line_plots <- function(corr_results, cols) {
       ) +
     theme(aspect.ratio = 1)
 
-    output_file <- plots_file(paste0(col_name, "_plot.pdf"))
+    # Output filenames use the thesis's own matrix notation (A/K/AC) instead of
+    # the internal column names, matching OUTCOME_LABELS above and the senspec
+    # plot filenames below.
+    file_prefix <- switch(
+      col_name,
+      "Beta_corr"             = "A_corr",
+      "Kappa_corr"             = "K_corr",
+      "Beta_ac_corr_pearson"   = "AC_corr",
+      "Beta_ac_corr_spearman"  = "AC_corr_spearman",
+      col_name
+    )
+    output_file <- plots_file(paste0(file_prefix, "_plot.pdf"))
 
     # cairo_pdf instead of the default pdf() device: the base device's font-
     # metric calculation assumes a single-byte locale and mangles multi-byte
@@ -422,7 +433,9 @@ make_senspec_plots <- function(corr_results) {
         panel.spacing = unit(0.15, "in")
       )
 
-    output_file <- plots_file(paste0(net, "_senspec_plot_with_labels.pdf"))
+    # Same A/K matrix-notation prefix as the line-plot filenames above.
+    net_prefix <- switch(net, "Beta" = "A", "Kappa" = "K")
+    output_file <- plots_file(paste0(net_prefix, "_senspec_plot_with_labels.pdf"))
 
     ggsave(
       filename = output_file,
