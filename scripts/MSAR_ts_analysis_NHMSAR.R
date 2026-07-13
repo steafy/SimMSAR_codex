@@ -1,5 +1,5 @@
 # =============================================================================
-# SimMSAR Time Series Analysis - Main Execution Script
+# MSARsim Time Series Analysis - Main Execution Script
 # =============================================================================
 
 # Load all package dependencies

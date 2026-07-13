@@ -1,0 +1,48 @@
+\begin{table}[!h]
+\centering
+\caption{\label{tab:main_effects_averaged}Regime-gemittelte Haupteffekte (emtrends) und rohe Regime-Kontraste der prim\"aren LMMs.}
+\centering
+\begin{threeparttable}
+\begin{tabular}[t]{lrlrlll}
+\toprule
+Term & Estimate & df & $t$/$z$ & 95\%-KI & $p$ (BH-adj.) & sig\\
+\midrule
+\addlinespace[0.3em]
+\multicolumn{7}{l}{\textbf{temporal (A)}}\\
+\hspace{1em}logT & 0.560 & Inf & 122.136 & {}[0.551, 0.569] & < .001 & ***\\
+\hspace{1em}Density & 0.130 & Inf & 17.240 & {}[0.115, 0.145] & < .001 & ***\\
+\hspace{1em}Nodes & -0.009 & Inf & -1.155 & {}[-0.023, 0.006] & .248 & \\
+\hspace{1em}Regimes2 & -0.037 & 5388.8 & -1.738 & {}[-0.079, 0.005] & .099 & \\
+\hspace{1em}Regimes3 & -0.690 & 5388.8 & -32.390 & {}[-0.732, -0.649] & < .001 & ***\\
+\hspace{1em}Regimes4 & -1.182 & 5389.1 & -55.467 & {}[-1.224, -1.140] & < .001 & ***\\
+\addlinespace[0.3em]
+\multicolumn{7}{l}{\textbf{contemporaneous (K)}}\\
+\hspace{1em}logT & 0.540 & Inf & 101.488 & {}[0.530, 0.551] & < .001 & ***\\
+\hspace{1em}Density & -0.221 & Inf & -37.306 & {}[-0.233, -0.210] & < .001 & ***\\
+\hspace{1em}Nodes & -0.366 & Inf & -64.139 & {}[-0.377, -0.355] & < .001 & ***\\
+\hspace{1em}Regimes2 & -0.527 & 15598.5 & -28.038 & {}[-0.563, -0.490] & < .001 & ***\\
+\hspace{1em}Regimes3 & -1.113 & 14675.8 & -62.062 & {}[-1.149, -1.078] & < .001 & ***\\
+\hspace{1em}Regimes4 & -1.524 & 14169.1 & -87.104 & {}[-1.559, -1.490] & < .001 & ***\\
+\addlinespace[0.3em]
+\multicolumn{7}{l}{\textbf{controllability}}\\
+\hspace{1em}logT & 0.534 & Inf & 77.032 & {}[0.521, 0.548] & < .001 & ***\\
+\hspace{1em}Density & -0.072 & Inf & -8.431 & {}[-0.089, -0.055] & < .001 & ***\\
+\hspace{1em}Nodes & -0.129 & Inf & -14.695 & {}[-0.146, -0.112] & < .001 & ***\\
+\hspace{1em}Regimes2 & -0.283 & 11274.9 & -10.502 & {}[-0.336, -0.230] & < .001 & ***\\
+\hspace{1em}Regimes3 & -0.926 & 10248.1 & -35.607 & {}[-0.977, -0.875] & < .001 & ***\\
+\hspace{1em}Regimes4 & -1.405 & 9705.0 & -55.063 & {}[-1.455, -1.355] & < .001 & ***\\
+\addlinespace[0.3em]
+\multicolumn{7}{l}{\textbf{regime sequence}}\\
+\hspace{1em}logT & 0.057 & Inf & 41.970 & {}[0.054, 0.059] & < .001 & ***\\
+\hspace{1em}Density & -0.003 & 4018.5 & -1.711 & {}[-0.007, 0.000] & .087 & \\
+\hspace{1em}Nodes & -0.004 & 4020.9 & -2.209 & {}[-0.007, -0.000] & .034 & *\\
+\hspace{1em}Regimes3* & -0.084 & 3977.8 & -19.223 & {}[-0.093, -0.076] & < .001 & ***\\
+\hspace{1em}Regimes4* & -0.145 & 4009.5 & -32.849 & {}[-0.153, -0.136] & < .001 & ***\\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\item \textit{Note: } 
+\item logT, Density und Nodes sind gleichgewichtet über die Regimestufen gemittelte Slopes (emtrends); für diese Zeilen sind df und Teststatistik asymptotisch (df = Inf, z-Wert statt Satterthwaite-t). Die Regimes-Kontraste (sowie Density/Nodes der Regimesequenz) sind rohe Modellkoeffizienten mit Satterthwaite-t (M = 1 als Referenz; mit * gekennzeichnete RQ4-Kontraste relativ zu M = 2, da M = 1 dort ausgeschlossen ist). Die BH-Korrektur bezieht sich nur auf die hier gezeigten Haupteffekt-Terme je Outcome und ist daher nicht direkt mit den $p$-Werten der vollst"andigen Modelltabellen vergleichbar.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
