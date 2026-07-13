@@ -1,15 +1,15 @@
-# Degenerate Sigma / Kappa estimates: diagnosis (postmix / effective sample size)
+# Degenerate Sigma / K estimates: diagnosis (postmix / effective sample size)
 
 Investigation date: 2026-07-01. Follows up on `docs/MSTEP_LASSO_CV_PENALIZATION.md`
-(which fixed the *Beta*-side sparsity/recovery with the now-default
+(which fixed the *A*-side sparsity/recovery with the now-default
 `cvglmnet` + `simmsar_lasso_reselect=TRUE` engine). That fix does **not** touch
 `Sigma`: `Sigma` is always the closed-form regime-weighted residual covariance of
-the (possibly sparse) Beta estimate, and `Kappa = solve(Sigma)` is always a raw
+the (possibly sparse) A estimate, and `K = solve(Sigma)` is always a raw
 inversion — neither is regularized. This document diagnoses the residual
-`Sigma`/`Kappa` degeneracy (ill-conditioning, magnitude blow-ups, empty/dense
+`Sigma`/`K` degeneracy (ill-conditioning, magnitude blow-ups, empty/dense
 inverted precision) seen in pilot runs, and tests the leading hypothesis that it
 is driven by **low effective sample size in poorly-separated regimes**
-(small `postmix[j]`), independent of how well Beta is recovered.
+(small `postmix[j]`), independent of how well A is recovered.
 
 **Everything here is uncommitted / diagnostic.** Instrumentation, the pilot
 driver, the stabilization, and this doc are for review only; no production
@@ -20,7 +20,7 @@ diagnosis; **§8 is the Step-2 stabilization (implemented + A/B validated).**
 ## TL;DR
 
 1. **Hypothesis CONFIRMED for the ill-conditioning / magnitude-explosion mode.**
-   The degenerate `est_Sigma`/`est_Kappa` estimates are an **under-determination**
+   The degenerate `est_Sigma`/`est_K` estimates are an **under-determination**
    problem: a regime assigned very few effective observations (`postmix[j]` ≈ 7–15)
    relative to its `d(d+1)/2` covariance parameters yields a near-singular residual
    covariance whose inverse explodes. Degenerate regimes have **median postmix 10
@@ -28,7 +28,7 @@ diagnosis; **§8 is the Step-2 stabilization (implemented + A/B validated).**
    covariance parameter vs 10.6**. `postmix_frac` dominates a logistic model of
    degeneracy (z = −9.2, p ≈ 5e−20); posterior entropy adds nothing once postmix
    is controlled for.
-2. **The "fully empty Kappa" pattern is a DIFFERENT, distinguishable phenomenon.**
+2. **The "fully empty K" pattern is a DIFFERENT, distinguishable phenomenon.**
    It is **not** low-postmix. Those regimes have normal postmix (median 197) and a
    *well*-conditioned, near-**diagonal** `est_Sigma` (large eigenvalues) whose
    inverse has sub-threshold off-diagonals → thresholded to empty. It concentrates
@@ -45,19 +45,19 @@ diagnosis; **§8 is the Step-2 stabilization (implemented + A/B validated).**
    errors (reciprocal condition ~1e-17) — the same under-determination, severe
    enough to break the reduct step's linear solve / the E-step rather than merely
    store a degenerate Sigma. This directly confirms the task's concern that Sigma
-   conditioning propagates into Beta's own re-estimation (`S.th`).
+   conditioning propagates into A's own re-estimation (`S.th`).
 
 5. **Step 2 (§8): a per-M-step eigenvalue floor fixes it, cheaply.** Implemented
    (default OFF) in `R/estimation/stabilize_sigma.R`, applied in both M-steps. In
    the A/B it **eliminates the outright fit failures** (baseline 16.7% → 0%), caps
-   the worst-case condition number and |Kappa off-diagonal|, keeps Σ **dense** (0
+   the worst-case condition number and |K off-diagonal|, keeps Σ **dense** (0
    exact zeros → the reduct freeze logic stays a no-op), and leaves **healthy cells
    bit-for-bit unchanged**. Recommendation: `simmsar_sigma_stab="floor"`,
    `simmsar_sigma_stab_floor=1e-3` (safe default; cond cap 1000) or `1e-2` (tightest
    control, at some risk of benign MaxIter-hitting on borderline fits).
 
 Verdict: the postmix hypothesis holds for the numerically-degenerate mode → the
-cheap in-EM stabilization (Step 2) is warranted and validated. The empty-Kappa mode
+cheap in-EM stabilization (Step 2) is warranted and validated. The empty-K mode
 is out of its scope and is left alone.
 
 ## 1. Method / instrumentation (uncommitted)
@@ -79,13 +79,13 @@ is out of its scope and is left alone.
   `N={4,6,8} × Density={.25,.5,.75} × M={1,2,3,4} × T={200,400,800,1600}`,
   `n_ts=5` (720 fits), default engine `cvglmnet + reselect + 1se + refit`,
   `MaxIter=200`, master seed 58396. Scored with the exact production analysis
-  gates (`compute_recovery_metrics`, `min_edg_val=0.05`, `KAPPA_COND_MAX=1e6`,
+  gates (`compute_recovery_metrics`, `min_edg_val=0.05`, `K_COND_MAX=1e6`,
   `max_plausible_magnitude=10`). Estimation wall time 35.8 min on 5 workers.
 - Degeneracy is characterised **self-contained** in the side-table (invert
   `est_Sigma` directly), so even rows the pipeline NA-gates out are described.
-- Ground-truth `Kappa` is diagonally-dominant PD by construction
-  (`generate_kappa`: `κ_ii = Σ_{j≠i}|κ_ij| + 0.1`, off-diagonals in [0.05, 1]), so
-  the *true* Sigma is well-conditioned and true |Kappa off-diag| ≤ 1. **All**
+- Ground-truth `K` is diagonally-dominant PD by construction
+  (`generate_K`: `κ_ii = Σ_{j≠i}|κ_ij| + 0.1`, off-diagonals in [0.05, 1]), so
+  the *true* Sigma is well-conditioned and true |K off-diag| ≤ 1. **All**
   observed degeneracy is estimation-side.
 
 ## 2. Overall degeneracy rates (707 fitted, 1756 regime rows)
@@ -97,12 +97,12 @@ rows, per the production gates:
 |---|---|---|---|
 | `solve(est_Sigma)` failed | 0 | 0.00% | — |
 | ill-conditioned (cond > 1e6, `rcond` gate) | 6 | 0.34% | near-singular Sigma |
-| magnitude (|Kappa off-diag| > 10) | 30 | 1.71% | inverse blow-up |
-| empty Kappa (no off-diag edge survives 0.05) | 22 | 1.25% | near-diagonal Sigma |
-| dense Kappa (specificity < 0.05) | 210 | 11.96% | inverse of full Sigma is dense |
+| magnitude (|K off-diag| > 10) | 30 | 1.71% | inverse blow-up |
+| empty K (no off-diag edge survives 0.05) | 22 | 1.25% | near-diagonal Sigma |
+| dense K (specificity < 0.05) | 210 | 11.96% | inverse of full Sigma is dense |
 | **any numerically degenerate** (ill / magnitude / empty) | **54** | **3.08%** | — |
 
-`dense Kappa` is a **specificity artifact, not degeneracy**: the inverse of an
+`dense K` is a **specificity artifact, not degeneracy**: the inverse of an
 (estimated) full residual covariance is generically dense, so many off-diagonals
 exceed 0.05 against a sparse truth. It rises monotonically with M (16% at M=4) and
 is excluded from the degeneracy set. It is a scoring/thresholding matter, not a
@@ -113,11 +113,11 @@ numerical one, and is not in scope here.
 Splitting the flagged rows into mutually-exclusive modes (magnitude → ill-cond →
 empty) exposes two **opposite** Sigma pathologies plus a ratio-only case:
 
-| mode | n | postmix med (min) | postmix_frac med | min eig med | cond med | \|Kappa off-diag\| med |
+| mode | n | postmix med (min) | postmix_frac med | min eig med | cond med | \|K off-diag\| med |
 |---|---|---|---|---|---|---|
 | **magnitude_explosion** | 30 | **10.0 (7)** | 0.037 | **3.9e-3** | 5.9e3 | **68** |
 | ill_conditioned_only | 3 | 198 (9) | 0.248 | 2.8e-1 | 4.2e9 | 0.79 |
-| **kappa_empty** | 21 | **197 (55)** | 0.278 | **133** | 188 | **1.7e-3** |
+| **K_empty** | 21 | **197 (55)** | 0.278 | **133** | 188 | **1.7e-3** |
 | healthy | 1702 | 202 | 0.357 | 3.4e-1 | 23.6 | 0.92 |
 
 - **magnitude_explosion (the hypothesis mode).** Starved regimes: postmix ~10 for
@@ -125,7 +125,7 @@ empty) exposes two **opposite** Sigma pathologies plus a ratio-only case:
   eigenvalue** (~4e-3, down to 4.5e-7), so its inverse blows up. The largest
   observed off-diagonals (postmix in parentheses):
 
-  | (T,D,N,M,reg) | postmix | min eig | cond | \|Kappa off-diag\| max |
+  | (T,D,N,M,reg) | postmix | min eig | cond | \|K off-diag\| max |
   |---|---|---|---|---|
   | 800,.5,8,4,r3 | 10.0 | 4.5e-7 | 3.3e7 | **603068** |
   | 400,.75,8,3,r2 | 9.0 | 2.3e-6 | 1.1e6 | 105970 |
@@ -136,10 +136,10 @@ empty) exposes two **opposite** Sigma pathologies plus a ratio-only case:
   eigenvalue. This is exactly the ">1000 off-diagonals / cond up to ~1e11" and
   "magnitude-outlier" pattern from earlier pilots.
 
-- **kappa_empty (distinct — NOT low postmix).** Normal postmix (median 197), and a
+- **K_empty (distinct — NOT low postmix).** Normal postmix (median 197), and a
   **well-conditioned, near-diagonal** Sigma (**large** min eigenvalue ~133, cond
   ~188). Its inverse is essentially diagonal, so every off-diagonal (~1.7e-3) is
-  below the 0.05 threshold → the thresholded Kappa is empty and `Kappa_corr` is
+  below the 0.05 threshold → the thresholded K is empty and `K_corr` is
   undefined. The rows concentrate on a **handful of specific network draws**:
   overwhelmingly `ts_id=1, N=6, M=3, density=0.75` (appears at T=200/400/800/1600
   — the same generating network), plus `N=4/M=3/density=0.75/ts_id=1` and some
@@ -208,10 +208,10 @@ factor acts *through* effective-obs-per-parameter: **M>1** is required to split 
 data across regimes (M=1 never degenerates — one regime keeps all obs); **short T**
 gives fewer total obs to split; **large N** raises the parameter count per regime;
 **high density** makes regimes harder to separate (so the E-step starves the weaker
-ones) — density 0.75 is the worst cell and is also where the empty-Kappa network
+ones) — density 0.75 is the worst cell and is also where the empty-K network
 draws sit. No design cell shows degeneracy *independent* of low postmix: the
 magnitude/ill-conditioned rows are all low-postmix; the only postmix-independent
-pattern is the empty-Kappa mode (§3), which is network-draw-specific, not cell-wide.
+pattern is the empty-K mode (§3), which is network-draw-specific, not cell-wide.
 
 ## 5. Onset over EM iterations (gradual, then locked in)
 
@@ -243,7 +243,7 @@ all 6 retries with either `System ist singulär: reziproke Konditionszahl ≈ 1e
 (a regime collapses to ~0 mass). The singular-`solve` errors originate in the
 reduct M-step's linear system / likelihood term (`solve(S.th)` at
 `mstep_hh_reduct_msar.R:132`, `solve(A,b)` at `:168`) — i.e. **Sigma's
-conditioning already propagates into Beta's re-estimation**, exactly the `S.th`
+conditioning already propagates into A's re-estimation**, exactly the `S.th`
 coupling the task flagged. These are the extreme end of the same continuum, not a
 separate failure mode.
 
@@ -253,7 +253,7 @@ The hypothesis holds for the numerically-degenerate mode, so the Step-2 plan is
 on target, with these specifics from the data:
 
 - **Act every EM iteration** (§5): the ill-conditioning is present from iteration 1
-  and persists; it also feeds Beta via `S.th`. A per-M-step floor protects both the
+  and persists; it also feeds A via `S.th`. A per-M-step floor protects both the
   E-step likelihood and the reduct linear solve (and would likely rescue several of
   the 13 hard crashes in §5.1).
 - **Target the small-eigenvalue direction.** The magnitude mode is precisely a
@@ -263,9 +263,9 @@ on target, with these specifics from the data:
   untouched. `est_Sigma_min_eig` in the side-table is the quantity to calibrate the
   floor against (healthy median 0.34 vs degenerate 3.9e-3 → ~2 orders of magnitude
   of separation to place a floor in).
-- **Leave the empty-Kappa mode alone** (§3): it is well-conditioned and
+- **Leave the empty-K mode alone** (§3): it is well-conditioned and
   network-specific; a ridge/floor won't move it and shouldn't. Do not tune the
-  stabilization to "fix" empty Kappa.
+  stabilization to "fix" empty K.
 - **Keep Sigma dense.** The stabilization must not introduce exact zeros, or it
   would arm the frozen-support logic at `mstep_hh_reduct_msar.R:199`
   (`w = which(abs(theta$sigma[[j]]) > 0)`) — currently a no-op only because the raw
@@ -273,7 +273,7 @@ on target, with these specifics from the data:
   keep every entry non-zero; this must be **verified**, not assumed (Step 2).
 - **Validate on the right cells.** The degeneracy lives in N=8, M≥3, short T,
   density 0.75; A/B there (plus a couple of healthy cells to confirm no distortion)
-  is the discriminating comparison, with matched data+init as in the Beta LASSO fix.
+  is the discriminating comparison, with matched data+init as in the A LASSO fix.
 
 ## 7. Reproduce
 
@@ -281,7 +281,7 @@ on target, with these specifics from the data:
 # full pilot + side-table + headline analysis (uncommitted):
 Rscript scripts/diagnose_sigma_kappa.R
 #   -> output/diagnostics/MSAR_diag_<stamp>.rds        (scored msar_results)
-#   -> output/diagnostics/sigma_kappa_diag_<stamp>.csv (per-regime side-table)
+#   -> output/diagnostics/sigma_K_diag_<stamp>.csv (per-regime side-table)
 # per-iteration rcond trace on hard cells: set
 #   options(simmsar_capture_sigma_trace = TRUE); fit; inspect fit$sigma_trace
 ```
@@ -346,7 +346,7 @@ Fit-level (per config, 24 fits each):
 **The headline win: stabilization eliminates the outright fit failures.** Baseline
 loses 1-in-6 fits to `solve()` "system is singular" crashes (the §5.1 mechanism);
 `ridge 1e-2`, `floor 1e-3`, `floor 1e-2` recover **all** of them. This is the
-`S.th` coupling made concrete — conditioning Σ rescues the fit whose *Beta*
+`S.th` coupling made concrete — conditioning Σ rescues the fit whose *A*
 re-estimation solve was crashing. Runtime rises modestly (the recovered hard fits
 now actually run); no config reintroduces non-convergence (≤1 MaxIter hit).
 
@@ -363,7 +363,7 @@ Degeneracy flags & density (per **surviving** regime row):
 - **Density preserved for every config** (`Σ exact zeros = 0`) → the reduct freeze
   logic stays the intended no-op. This was the explicit must-verify.
 - **`floor 1e-2` gives the tightest control**: worst-case condition number 236 (vs
-  baseline 1.2e4) and worst |Kappa off-diagonal| 16.9 (vs 38.5).
+  baseline 1.2e4) and worst |K off-diagonal| 16.9 (vs 38.5).
 - **Survivorship caveat (important):** baseline shows only 58 surviving rows vs 69,
   because its 4 crashed fits contribute *no* regime rows. So baseline's low
   surviving-row flag rate **understates** its true degeneracy — its worst regimes
@@ -375,7 +375,7 @@ Degeneracy flags & density (per **surviving** regime row):
 
 Recovery (mean over regimes):
 
-| | Beta_corr | Beta_spec | Kappa_corr | Kappa_spec | NRMSE_Kappa |
+| | A_corr | A_spec | K_corr | K_spec | NRMSE_K |
 |---|---|---|---|---|---|
 | **hard** baseline | 0.745 | 0.797 | 0.538 | 0.193 | 0.438 |
 | hard ridge 1e-2 | 0.746 | 0.787 | 0.524 | 0.220 | 0.409 |
@@ -386,12 +386,12 @@ Recovery (mean over regimes):
 
 - **No recovery cost on healthy cells** — `floor` is *identical to baseline to 3
   decimals* on every healthy metric (floor never touches a Σ with cond < 100, and
-  the healthy Σ's here have cond ~25). `ridge 1e-2` perturbs healthy Kappa_sen/spec
+  the healthy Σ's here have cond ~25). `ridge 1e-2` perturbs healthy K_sen/spec
   by ~1–2pp (it shifts every eigenvalue, even the healthy ones) — a small but real
   reason to prefer floor.
-- **Hard-cell recovery is not degraded and NRMSE improves.** Beta and Kappa
+- **Hard-cell recovery is not degraded and NRMSE improves.** A and K
   correlations are within noise of baseline (and baseline's are computed on the
-  easier surviving subset); `floor 1e-2` gives the best hard NRMSE_Kappa (0.334 vs
+  easier surviving subset); `floor 1e-2` gives the best hard NRMSE_K (0.334 vs
   0.438) by taming the magnitude outliers that dominate that absolute error.
 
 The table above is **survivorship-confounded** (baseline's means exclude the hard
@@ -401,32 +401,32 @@ healthy); deltas are `config − baseline`:
 
 | metric | HARD floor 1e-3 | HARD floor 1e-2 | HARD ridge 1e-2 | HEALTHY floor 1e-3/1e-2 | HEALTHY ridge 1e-2 |
 |---|---|---|---|---|---|
-| Beta_corr | +0.001 | −0.002 | +0.014 | +0.000 | −0.000 |
-| Beta_sen | −0.001 | +0.002 | +0.011 | +0.000 | +0.000 |
-| Beta_spec | +0.000 | −0.004 | −0.019 | +0.000 | +0.000 |
-| Kappa_corr | −0.002 | −0.017 | +0.014 | +0.000 | +0.000 |
-| Kappa_sen | −0.012 | −0.025 | −0.015 | +0.000 | **−0.008** |
-| Kappa_spec | +0.003 | +0.007 | +0.029 | +0.000 | **+0.018** |
-| NRMSE_Kappa | +0.000 | **−0.087** | **−0.063** | +0.000 | +0.002 |
+| A_corr | +0.001 | −0.002 | +0.014 | +0.000 | −0.000 |
+| A_sen | −0.001 | +0.002 | +0.011 | +0.000 | +0.000 |
+| A_spec | +0.000 | −0.004 | −0.019 | +0.000 | +0.000 |
+| K_corr | −0.002 | −0.017 | +0.014 | +0.000 | +0.000 |
+| K_sen | −0.012 | −0.025 | −0.015 | +0.000 | **−0.008** |
+| K_spec | +0.003 | +0.007 | +0.029 | +0.000 | **+0.018** |
+| NRMSE_K | +0.000 | **−0.087** | **−0.063** | +0.000 | +0.002 |
 
 - **Healthy: `floor` is exactly 0.000 on every metric** (its Σ's, cond ~25, never
-  hit the cap); `ridge 1e-2` nudges healthy Kappa sens/spec by ~1–2pp (it lifts all
+  hit the cap); `ridge 1e-2` nudges healthy K sens/spec by ~1–2pp (it lifts all
   eigenvalues) — the reason to prefer floor.
-- **Hard: correlations move within noise** (±0.02 on 42 rows) for both Beta and
-  Kappa; Beta is essentially untouched (only the weak `S.th` coupling reaches it).
-- **Hard: Kappa_sen dips a little / Kappa_spec rises a little** — capping the
+- **Hard: correlations move within noise** (±0.02 on 42 rows) for both A and
+  K; A is essentially untouched (only the weak `S.th` coupling reaches it).
+- **Hard: K_sen dips a little / K_spec rises a little** — capping the
   conditioning shrinks the inflated off-diagonals, so a few borderline true edges
   fall under the 0.05 threshold (−sen) while spurious huge entries vanish (+spec).
-- **Hard: NRMSE_Kappa is the real recovery gain** — `floor 1e-2` −0.087, `ridge
+- **Hard: NRMSE_K is the real recovery gain** — `floor 1e-2` −0.087, `ridge
   1e-2` −0.063 (NRMSE is an *absolute* error dominated by the exploded entries).
   `floor 1e-3` does **not** move it: cap 1000 is too loose to remove the
   NRMSE-driving outliers on these particular common fits.
 - **The largest benefit is invisible in this paired table.** Every stabilized
   config additionally rescued **3 hard fits (cells 2 & 3) that baseline crashed on
-  entirely** — there baseline has *no* Beta/Kappa estimate, and stabilization
+  entirely** — there baseline has *no* A/K estimate, and stabilization
   yields a usable one. The paired set can only compare fits both produced.
-- **`NRMSE_Beta` was not scored** in the A/B harness (only Beta corr/sen/spec).
-  Beta is not regularized and its corr/sen/spec are ~unchanged, so NRMSE_Beta is
+- **`NRMSE_A` was not scored** in the A/B harness (only A corr/sen/spec).
+  A is not regularized and its corr/sen/spec are ~unchanged, so NRMSE_A is
   expected to move negligibly; stated as unmeasured rather than asserted.
 
 **Convergence caveat (benign non-convergence).** Flooring *every* M-step means the
@@ -456,7 +456,7 @@ fastest and cleanest on this fit; `floor 1e-3` (milder cap) also converged.
 principle: it bounds the condition number by construction (a directly interpretable
 knob = `1/floor`) and acts *only* on the ill-conditioned directions, so healthy
 regimes are left bit-for-bit untouched (ridge shifts every eigenvalue and perturbs
-even well-conditioned regimes by ~1–2pp on Kappa sens/spec). Both floor settings
+even well-conditioned regimes by ~1–2pp on K sens/spec). Both floor settings
 and `ridge 1e-2` eliminate the outright fit failures and keep Σ dense.
 
 Between the two floor strengths there is a **conditioning-tightness vs
@@ -487,8 +487,8 @@ to `1e-2`, since the 24-fit A/B is too small to estimate that rate precisely.
 engine: production behaviour is unchanged until opted in.
 
 Out of scope (per the task, and confirmed unnecessary by §3): no graphical-lasso
-sparsification of Σ/Kappa inside the loop, and no joint Beta+Σ re-selection. The
-empty-Kappa mode is deliberately left unchanged.
+sparsification of Σ/K inside the loop, and no joint A+Σ re-selection. The
+empty-K mode is deliberately left unchanged.
 
 ### 8.5 Production wiring (verified parallel-safe)
 
@@ -522,7 +522,7 @@ single fit outside the driver, just `options(simmsar_sigma_stab = "floor",
 simmsar_sigma_stab_floor = 1e-3)` before calling `fit_msar()` /
 `init_and_fit_msar_lasso()`. Nothing downstream needs changing: the analysis
 pipeline (`compute_recovery_metrics`) still inverts the stored `est_Sigma`, now
-well-conditioned, and its `KAPPA_COND_MAX` / `max_plausible_magnitude` gates simply
+well-conditioned, and its `K_COND_MAX` / `max_plausible_magnitude` gates simply
 flag far fewer rows.
 
 ### 8.4 Reproduce Step 2

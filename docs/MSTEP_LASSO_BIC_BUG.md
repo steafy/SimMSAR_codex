@@ -13,7 +13,7 @@ Investigation date: 2026-06-26. Test grid: `N={4,6,8}`, `M={1,2,3,4}`,
    model-selection line (`R/estimation/mstep_hh_lasso_msar.R`), inherited verbatim
    from `NHMSAR::Mstep.hh.lasso.MSAR`.
 3. **Fix applied (option 1):** correct the BIC line → **10–21× faster** on heavy
-   cells **and** materially better recovery of Beta and Sigma.
+   cells **and** materially better recovery of A and Sigma.
 4. **Option 2 (EBIC penalty recalibration) does not work** and was *not* applied:
    the λ-selection is structurally unable to enforce sparsity; all sparsity in the
    pipeline comes from the downstream `min_edg_val` threshold.
@@ -85,8 +85,8 @@ N/M/density, n_ts=3, regimes matched via `match_regimes`):
 
 | Metric | original | corrected |
 |---|---|---|
-| Beta correlation | 0.62 | **0.94** |
-| Beta MAE | 0.186 | **0.060** |
+| A correlation | 0.62 | **0.94** |
+| A MAE | 0.186 | **0.060** |
 | Sensitivity (true edges found) | 0.55 | **0.95** |
 | Specificity (spurious edges avoided) | 0.844 | 0.834 |
 | Edges kept (true ≈ 19) | 12.7 (under-selects) | **20.9** |

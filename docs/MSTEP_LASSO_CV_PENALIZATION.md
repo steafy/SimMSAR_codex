@@ -11,7 +11,7 @@ finding, (b) diagnoses *why* the current "LASSO" M-step cannot shrink, and
 ## 0. Independent verification of the core finding (CONFIRMED)
 
 Script: isolated first M-step on freshly generated series with a **known sparse
-ground-truth** Beta (generation enforces `|Beta_ij| >= 0.05` on non-zero edges),
+ground-truth** A (generation enforces `|A_ij| >= 0.05` on non-zero edges),
 capturing `par$A[[j]][[1]]` **before** any thresholding.
 
 `RAW nnz` = share of `|entry| > 1e-8` in the raw estimate; true density in
@@ -101,8 +101,8 @@ only worth using together with per-iteration re-selection.
 Real `fit_msar()` calls, `MaxIter=200`, 6 cells (light→heavy) × 3 replicates ×
 4 configs. **Identical data AND identical init per (cell, replicate)** across all
 configs, so every difference is the first M-step. Metrics are per-regime then
-averaged (regimes matched to truth with `match_regimes`). Beta sens/spec/cor and
-Kappa/Sigma are scored **after** the 0.05 threshold, exactly as the analysis
+averaged (regimes matched to truth with `match_regimes`). A sens/spec/cor and
+K/Sigma are scored **after** the 0.05 threshold, exactly as the analysis
 pipeline does; `RAW b_spec` is the specificity of the *un*-thresholded estimate
 (the headline "does sparsity come from the estimator?" number).
 
@@ -145,7 +145,7 @@ separate regimes, so NEW-1se needs 3–12× more iterations on heavy/high-M cell
   correct (`weights=w`, not `w²`).
 - **But it worsens the study's primary recovery outcomes.** On every cell,
   `lambda.1se` buys specificity by **dropping true edges** (sensitivity
-  0.96→0.74) and degrades Beta-weight, Kappa and Sigma correlation. This is the
+  0.96→0.74) and degrades A-weight, K and Sigma correlation. This is the
   classic 1se over-shrinkage, amplified here because (a) k-fold CV on
   autocorrelated, softly regime-weighted pseudo-observations over-penalises, and
   (b) the support is **frozen after iteration 1** (`reduct`), so an
@@ -183,10 +183,10 @@ E-step improves. A/B across M=1..4 (5 cells, 3 reps, identical data+init):
 | cvglmnet re-select (min) | 0.97 | 0.83 | 0.96 | 0.94 | 0.97 | 0.48 | 40 | 54 s | 0 |
 
 Re-selection (`lambda.1se`) **matches or beats OLD on every recovery metric**
-(Beta_cor 0.95 vs 0.88, Beta_spec 0.94 vs 0.72, Sigma 0.96 vs 0.90, Kappa tied
+(A_cor 0.95 vs 0.88, A_spec 0.94 vs 0.72, Sigma 0.96 vs 0.90, K tied
 0.92) **and** delivers genuine estimator-level sparsity (RAW spec 0.81 vs 0.08)
 **and** converges in fewer iterations (12 vs 40, zero non-converged). It holds at
-every M including M=4 (Beta_cor 0.94 vs OLD 0.90). Per-M detail:
+every M including M=4 (A_cor 0.94 vs OLD 0.90). Per-M detail:
 
 | M | OLD b_cor / k_cor | re-select b_cor / k_cor | re-select RAW spec |
 |---|---|---|---|
@@ -262,7 +262,7 @@ changes:
 **`5 folds × 50 λ × fixed folds` is ~2.5× faster than naive full-CV re-selection
 with identical recovery** (random 5-fold needed 28 EM iters; fixed needs 7).
 That brings full re-selection from ~13× the legacy engine down to **~5×**. Going
-below 50 λ or to 3 folds starts to lose recovery (5×30 fixed: Kappa 0.87). These
+below 50 λ or to 3 folds starts to lose recovery (5×30 fixed: K 0.87). These
 are now the cv.glmnet-engine **defaults** (`simmsar_lasso_nfolds=5`,
 `simmsar_lasso_nlambda=50`, `simmsar_lasso_fixedfolds=TRUE`); they only apply when
 the (opt-in) `cvglmnet` engine is selected, so the default `bic` path is
