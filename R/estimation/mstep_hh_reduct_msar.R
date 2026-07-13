@@ -1,3 +1,11 @@
+# -----------------------------------------------------------------------------
+# Adapted from the NHMSAR package (Valerie Monbet), obtained from the CRAN
+# archive. Original license: GPL. See the repository LICENSE (GPL-3) and the
+# README section "License & attribution".
+# Adaptation: HH reduction M-step (support-copy re-estimation) with opt-in Sigma
+# stabilization.
+# -----------------------------------------------------------------------------
+
 # Reduction (support-copy) M-step: re-estimates AR coefficients on the selected
 # support and updates residual covariances. Adapted from the NHMSAR HH reduction
 # M-step.

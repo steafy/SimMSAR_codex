@@ -1,3 +1,10 @@
+# -----------------------------------------------------------------------------
+# Adapted from the NHMSAR package (Valerie Monbet), obtained from the CRAN
+# archive. Original license: GPL. See the repository LICENSE (GPL-3) and the
+# README section "License & attribution".
+# Adaptation: renamed to init_theta_msar(); logic unchanged apart from formatting.
+# -----------------------------------------------------------------------------
+
 # Dependencies are loaded centrally via R/dependencies.R
 # Required packages: NHMSAR
 

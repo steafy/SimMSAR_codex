@@ -1,3 +1,11 @@
+# -----------------------------------------------------------------------------
+# Adapted from the NHMSAR package (Valerie Monbet), obtained from the CRAN
+# archive. Original license: GPL. See the repository LICENSE (GPL-3) and the
+# README section "License & attribution".
+# Adaptation: HH M-step with a cross-validated glmnet LASSO penalty on the AR
+# coefficients (opt-in "cvglmnet" engine).
+# -----------------------------------------------------------------------------
+
 # Dependencies are loaded centrally via R/dependencies.R
 # Required packages: glmnet
 

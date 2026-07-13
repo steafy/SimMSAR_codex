@@ -1,3 +1,11 @@
+# -----------------------------------------------------------------------------
+# Adapted from the NHMSAR package (Valerie Monbet), obtained from the CRAN
+# archive. Original license: GPL. See the repository LICENSE (GPL-3) and the
+# README section "License & attribution".
+# Adaptation: HH M-step -- lars-subset + BIC selection first step (BIC
+# length/regime bug fixed; see docs/MSTEP_LASSO_BIC_BUG.md).
+# -----------------------------------------------------------------------------
+
 # Dependencies are loaded centrally via R/dependencies.R
 # Required packages: prettyGraphs, lars
 #

@@ -1,3 +1,11 @@
+# -----------------------------------------------------------------------------
+# Adapted from the NHMSAR package (Valerie Monbet), obtained from the CRAN
+# archive. Original license: GPL. See the repository LICENSE (GPL-3) and the
+# README section "License & attribution".
+# Adaptation: renamed to fit_msar(); adds LASSO / reduction first-M-step engines
+# (selected via options) and an opt-in Sigma-stabilization + degeneracy trace.
+# -----------------------------------------------------------------------------
+
 source("R/estimation/as_theta_msar.R")
 source("R/estimation/stabilize_sigma.R")          # opt-in Sigma stabilization (default off)
 source("R/estimation/mstep_hh_lasso_msar.R")      # cv.glmnet engine (opt-in)

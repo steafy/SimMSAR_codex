@@ -1,3 +1,10 @@
+# -----------------------------------------------------------------------------
+# Adapted from the NHMSAR package (Valerie Monbet), obtained from the CRAN
+# archive. Original license: GPL. See the repository LICENSE (GPL-3) and the
+# README section "License & attribution".
+# Adaptation: renamed to em_converged(); logic unchanged apart from formatting.
+# -----------------------------------------------------------------------------
+
 # EM convergence test: TRUE once the relative log-likelihood increase falls below
 # `threshold`; also flags a (numerically) decreasing step. Adapted from the
 # NHMSAR package.
