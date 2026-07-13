@@ -6,7 +6,8 @@ time series are generated from known regime-specific networks, Markov-Switching
 Autoregressive (MSAR) models are fit back to them, and the recovery of the true
 network structure and its average controllability is scored across a factorial
 design (nodes x density x regimes x timesteps). This is the companion code to the
-master's thesis *[THESIS TITLE]* ([INSTITUTION], [YEAR]).
+master's thesis *Network Controllability in Time-Varying Dynamical Systems*
+(Philipps-Universität Marburg, Department of Psychology, 2026).
 
 ## Notation
 
@@ -218,5 +219,5 @@ The estimation core (`R/estimation/fit_msar.R`, `init_theta_msar.R`,
 license GPL). The adaptations add LASSO / reduction M-step engines and opt-in
 Sigma stabilisation; each file carries an attribution header.
 
-If you use this code, please cite the thesis: *[AUTHOR] ([YEAR]). [THESIS TITLE].
-[INSTITUTION].*
+If you use this code, please cite the thesis: *Becker, S. (2026). Network
+Controllability in Time-Varying Dynamical Systems. Philipps-Universität Marburg, Department of Psychology.*
