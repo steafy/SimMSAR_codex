@@ -143,9 +143,9 @@ OUTCOME_LABELS <- c(
 # palettes are edited in one place.
 OUTCOME_COLORS <- c(
   "temporal (A)"                  = "#2B0594",  # deep violet
-  "contemporaneous (K)"                  = "#99159F",  # magenta
-  "controllability" = "#E26561",  # coral
-  "regime sequence"      = "#FDC527"   # gold
+  "contemporaneous (K)"           = "#99159F",  # magenta
+  "controllability"               = "#E26561",  # coral
+  "regime sequence"               = "#FDC527"   # gold
 )
 
 scale_color_thesis_outcome <- function(...) {
@@ -239,7 +239,7 @@ theme_thesis <- function(base_size = 11) {
       plot.background     = element_rect(fill = "white", color = NA),
       panel.grid.minor   = element_blank(),
       panel.grid.major.x = element_blank(),
-      panel.grid.major.y = element_line(color = "grey85", linewidth = 0.3, linetype = "dotted"),
+      panel.grid.major.y = element_line(color = "grey70", linewidth = 0.4, linetype = "dotted"),
       panel.spacing      = unit(0.9, "lines"),
       plot.title         = element_text(family = THESIS_FONT, face = "bold", hjust = 0.5, size = rel(1.15)),
       plot.subtitle      = element_text(family = THESIS_FONT, hjust = 0.5, color = "grey35", size = rel(0.9)),

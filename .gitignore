@@ -8,13 +8,14 @@
 # *.rds
 
 # Output files
-output/
-Plots/
-*.html
-*.tex
-*.pdf
-!docs/*.pdf
+#output/
+#Plots/
+#*.html
+#*.tex
+#*.pdf
+#!docs/*.pdf
 
 # OS files
 .DS_Store
 Thumbs.db
+.positai
