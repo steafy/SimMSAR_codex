@@ -28,11 +28,6 @@ Prefixes `orig_` / `est_` denote the true (generating) and estimated quantities
 `K_corr`, `AC_corr_pearson` (correlation of true vs. estimated), `A_sen`/`A_spec`
 and `K_sen`/`K_spec` (edge sensitivity/specificity), `NRMSE_A`/`NRMSE_K`.
 
-**Cohen's kappa is unrelated to the `K` network.** `cohens_kappa`, `Seq_kappa`
-and the RQ4 outputs (`Results_RQ4_seq_kappa_mixed`) refer to Cohen's kappa for
-*regime-sequence recovery* — the agreement between the true and reconstructed
-regime label sequences. It has nothing to do with the contemporaneous precision
-matrix `K`.
 
 ## Installation
 
