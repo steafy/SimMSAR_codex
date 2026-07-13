@@ -1,7 +1,7 @@
 # Helpers for scoring symmetric (undirected) matrices on their upper triangle:
 # vectorise the upper triangle, symmetrise a matrix, and compute edge-recovery
-# sensitivity/specificity and mean absolute error between a true and an estimated
-# matrix. Used for the contemporaneous network K.
+# sensitivity/specificity between a true and an estimated matrix. Used for the
+# contemporaneous network K.
 
 vectorize_upper_tri <- function(mat, diag = FALSE) {
   mat[upper.tri(mat, diag = diag)]
@@ -22,10 +22,4 @@ senspec_upper_tri <- function(orig_mat, est_mat, diag = FALSE) {
   specificity <- sum(true_neg) / sum(orig_vec == 0)
 
   list(sensitivity = sensitivity, specificity = specificity)
-}
-
-mae_upper_tri <- function(orig_mat, est_mat, diag = FALSE) {
-  orig_vec <- vectorize_upper_tri(orig_mat, diag = diag)
-  est_vec <- vectorize_upper_tri(est_mat, diag = diag)
-  mean(abs(orig_vec - est_vec))
 }

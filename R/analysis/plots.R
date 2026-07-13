@@ -108,13 +108,6 @@ LINE_NODES_COLORS <- setNames(
   c("4", "6", "8")
 )
 
-scale_color_thesis_nodes <- function(...) {
-  scale_color_manual(values = NODES_COLORS, labels = NODE_LABELS, ...)
-}
-scale_fill_thesis_nodes <- function(...) {
-  scale_fill_manual(values = NODES_COLORS, labels = NODE_LABELS, ...)
-}
-
 # Redundant shape coding for Nodes, IN ADDITION to colour: keeps figures legible
 # in greyscale printouts/photocopies -- the "don't rely on colour alone"
 # recommendation. Fillable variants (circle/triangle/square) so points can be
@@ -150,9 +143,6 @@ OUTCOME_COLORS <- c(
 
 scale_color_thesis_outcome <- function(...) {
   scale_color_manual(values = OUTCOME_COLORS, ...)
-}
-scale_fill_thesis_outcome <- function(...) {
-  scale_fill_manual(values = OUTCOME_COLORS, ...)
 }
 
 # --- Shared point/line sizing ------------------------------------------------
