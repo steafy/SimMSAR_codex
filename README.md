@@ -1,198 +1,222 @@
-# SimMSAR - Markov-Switching Autoregressive Models for Network Dynamics
+# SimMSAR
 
-This project implements simulation and estimation of Markov-Switching Autoregressive (MSAR) models for network dynamics using the NHMSAR package.
+Simulation study on parameter and controllability recovery in Markov-Switching
+Vector Autoregressive (MS-VAR) models of network dynamics. Synthetic multivariate
+time series are generated from known regime-specific networks, Markov-Switching
+Autoregressive (MSAR) models are fit back to them, and the recovery of the true
+network structure and its average controllability is scored across a factorial
+design (nodes x density x regimes x timesteps). This is the companion code to the
+master's thesis *[THESIS TITLE]* ([INSTITUTION], [YEAR]).
 
-## Project Structure
+## Notation
 
-```
-SimMSAR_claude/
-├── R/                          # R source code
-│   ├── estimation/             # MSAR model estimation functions
-│   │   ├── estimate_MSAR.R            # Main estimation pipeline
-│   │   ├── fit_msar.R                 # Model fitting with EM algorithm
-│   │   ├── init_theta_msar.R          # Parameter initialization
-│   │   ├── init_and_fit_msar_lasso.R  # Combined init & fit with retry
-│   │   ├── as_theta_msar.R            # Parameter object conversion
-│   │   ├── mstep_hh_lasso_msar.R      # M-step with LASSO
-│   │   ├── mstep_hh_reduct_msar.R     # M-step with reduction
-│   │   └── em_converged.R             # Convergence checking
-│   ├── generation/             # Data generation functions
-│   │   ├── generate_timeseries.R      # Main timeseries generation
-│   │   ├── generate_netdyn.R          # Network dynamics generation
-│   │   ├── generate_Beta.R            # Temporal dynamics (Beta matrix)
-│   │   ├── generate_kappa.R           # Precision matrix (kappa)
-│   │   ├── generate_transmat.R        # Transition matrix
-│   │   ├── generate_random.R          # Random network generation
-│   │   └── check_stability.R          # Stability checking
-│   ├── utils/                  # Utility functions
-│   │   ├── asign_regimes.R            # Regime assignment
-│   │   ├── senspec.R                  # Sensitivity/specificity
-│   │   ├── summarize_cor.R            # Correlation summary
-│   │   └── calculate_MAE.R            # Mean absolute error
-│   ├── analysis/               # Statistical analysis
-│   │   └── stat_analysis.R            # Post-hoc statistical analysis
-│   └── visualization/          # Plotting functions
-│       └── Create_3D_surfaceplots_for_means.R
-├── scripts/                    # Main execution scripts
-│   └── MSAR_ts_analysis_NHMSAR.R      # Main simulation & analysis script
-├── Data/                       # Data files (gitignored)
-├── archive/                    # Archived/deprecated code
-│   ├── old_versions/          # Superseded version 1 files
-│   ├── obsolete/              # Broken/non-functional scripts
-│   └── experimental/          # Experimental implementations
-├── .gitignore
-└── README.md
-```
+The code uses the same notation as the manuscript.
 
-## Workflow
+| Symbol | Meaning |
+|--------|---------|
+| `A`      | Temporal network — the VAR(1) coefficient matrix (directed, lag-1) |
+| `K`      | Contemporaneous network — the precision matrix of the residuals |
+| `Sigma`  | Residual covariance; `Sigma = K^{-1}` |
+| `AC`     | Average controllability of the temporal network `A` |
+| `M`      | Number of regimes (network states) |
+| `N`      | Number of nodes |
+| `T`      | Number of timesteps per series |
 
-### 1. Data Generation
-The workflow starts by generating synthetic network dynamics and time-series data:
+Prefixes `orig_` / `est_` denote the true (generating) and estimated quantities
+(e.g. `orig_A`, `est_K`). Recovery outcomes follow the same scheme: `A_corr`,
+`K_corr`, `AC_corr_pearson` (correlation of true vs. estimated), `A_sen`/`A_spec`
+and `K_sen`/`K_spec` (edge sensitivity/specificity), `NRMSE_A`/`NRMSE_K`.
+
+**Cohen's kappa is unrelated to the `K` network.** `cohens_kappa`, `Seq_kappa`
+and the RQ4 outputs (`Results_RQ4_seq_kappa_mixed`) refer to Cohen's kappa for
+*regime-sequence recovery* — the agreement between the true and reconstructed
+regime label sequences. It has nothing to do with the contemporaneous precision
+matrix `K`.
+
+## Installation
+
+Requires **R >= 4.0.0**.
+
+Most dependencies are on CRAN:
 
 ```r
-source("R/generation/generate_timeseries.R")
+install.packages(c(
+  "glmnet", "lars", "mvtnorm", "abind", "dplyr", "tibble", "stringr",
+  "future", "future.apply", "progressr", "lme4", "lmerTest", "emmeans",
+  "performance", "dunn.test", "ggplot2", "cowplot", "viridisLite",
+  "systemfonts", "kableExtra", "xtable", "clue"
+))
+```
 
-Timeseries_data <- generate_timeseries(
-  Density = c(0.25),      # Network edge density
-  N = c(4),               # Number of nodes
-  M = c(2),               # Number of regimes
-  T = c(3500),            # Time steps
-  n_ts = 30,              # Number of time series
-  warmup = 50,            # Warmup period
-  min_edg_val = 0.05,     # Min edge weight
-  max_edg_val = 1,        # Max edge weight
-  remain_lower = 0.33,    # Min prob. to stay in regime
-  remain_upper = 0.66     # Max prob. to stay in regime
+**NHMSAR** is no longer on the current CRAN and must be installed from the CRAN
+archive:
+
+```r
+install.packages("remotes")
+remotes::install_url(
+  "https://cran.r-project.org/src/contrib/Archive/NHMSAR/NHMSAR_1.19.tar.gz"
 )
 ```
 
-### 2. Model Estimation
-Estimate MSAR models from the generated time-series:
+Sourcing `R/dependencies.R` checks for all required packages and, if any are
+missing, prints the exact install command and stops (it never installs
+automatically).
+
+Optional: `elementalist` (GitHub-only) enables rounded facet-card styling in the
+plots; the plotting code falls back gracefully if it is absent.
 
 ```r
-source("R/estimation/estimate_MSAR.R")
-
-MSAR_models <- estimate_MSAR(
-  Density = Density,
-  N = N,
-  M = M,
-  T = T,
-  n_ts = n_ts,
-  order = 1,              # AR order
-  MaxIter = 200,          # Max EM iterations
-  verbose = FALSE,
-  min_edg_val = 0.05,
-  Timeseries_data = Timeseries_data
-)
+remotes::install_github("teunbrand/elementalist")
 ```
 
-### 3. Statistical Analysis
-Analyze the estimation results:
+Building the HTML result tables (`kableExtra::save_kable`) additionally needs
+**pandoc** on the system path; the LaTeX (`.tex`) exports do not.
 
-```r
-source("R/analysis/stat_analysis.R")
-# Performs PERMANOVA, linear mixed models, and generates plots
-```
+## Reproducing the pipeline
 
-## Quick Start
+Run everything from the repository root (scripts use relative paths).
 
-### 1. Configure Your Simulation
-
-Open `scripts/MSAR_ts_analysis_NHMSAR.R` and adjust parameters in the configuration section:
-
-```r
-# Network Structure
-N <- c(4)              # Number of nodes
-Density <- c(0.25)     # Edge density
-
-# Regimes
-M <- c(2)              # Number of regimes
-
-# Time Series
-T <- c(3500)           # Time steps
-n_ts <- 30             # Number of time series
-
-# Model Estimation
-MaxIter <- 200         # Max EM iterations
-eps <- 1e-5            # Convergence criterion
-
-# Output
-save_output <- TRUE    # Save results
-output_dir <- "output" # Output directory
-```
-
-### 2. Run the Analysis
+**(a) Simulation + estimation** — generates the synthetic series, fits the MSAR
+models, and writes the raw estimates:
 
 ```r
 source("scripts/MSAR_ts_analysis_NHMSAR.R")
 ```
 
-The script will:
-1. Display your configuration settings
-2. Generate synthetic time-series data with specified network parameters
-3. Estimate MSAR models for each time series
-4. Compare estimated vs. true network dynamics
-5. Save results to timestamped `.rds` files in the output directory
+This writes timestamped `output/MSAR_models_<timestamp>.rds`,
+`Timeseries_data_<timestamp>.rds` and `CONFIG_<timestamp>.rds`. Expect a long
+runtime: the full design is 3 x 3 x 4 x 4 x 150 replications = **21,600 fits**
+(several hours on a workstation).
 
-### Configuration Features
-
-- **Well-documented parameters**: Each parameter includes description and valid ranges
-- **Parameter validation**: Configuration printed at start for verification
-- **Automatic output management**: Creates output directory and timestamps files
-- **Reproducibility**: Optional seed setting for reproducible results
-- **Easy experimentation**: Change parameters and re-run without editing code
-
-For detailed configuration information, see the [Configuration Guide](docs/CONFIGURATION_GUIDE.md).
-
-## Dependencies
-
-SimMSAR uses a centralized dependency management system. All required packages are:
-
-**Core:** NHMSAR, netcontrol, huge
-**Data:** dplyr, Matrix
-**Statistics:** lme4, lmerTest, lmPerm, dunn.test, effects, sjPlot
-**Simulation:** graphicalVAR, mvtnorm, abind
-**Regularization:** lars, prettyGraphs
-**Visualization:** ggplot2, plotly, cowplot, RColorBrewer
-**Output:** knitr, kableExtra, xtable
-**Utilities:** progress
-
-### Managing Dependencies
-
-Dependencies are loaded automatically when you run the main script. To manage dependencies manually:
+**(b) Analysis** — scores recovery and regenerates every table and plot under
+`output/` from a saved estimation run:
 
 ```r
-# Load all dependencies
-source("R/dependencies.R")
-
-# Check package status
-print_package_summary()
-
-# Install missing packages
-install_missing_packages()
+MSAR_dynamics_list <- readRDS("output/MSAR_models_final.rds")
+source("R/analysis/stat_analysis.R")
 ```
 
-See [Dependency Management Guide](docs/DEPENDENCY_MANAGEMENT.md) for details.
+All scoring (edge thresholding, `K = solve(Sigma)`, correlations, NRMSE,
+sensitivity/specificity, average controllability) happens in the analysis step,
+so scoring decisions can be revised without re-running the expensive estimation.
 
-## Output
+## Design factors
 
-Results are saved as:
-- `Data/Timeseries_data_*.rds` - Generated time-series data
-- `Data/MSAR_models_*.rds` - Estimated MSAR models
-- `*.rds` files in root - Analysis results
-- Plots in designated output directory
+| Factor | Levels |
+|--------|--------|
+| Nodes (`N`)      | 4, 6, 8 |
+| Density          | 0.25, 0.50, 0.75 |
+| Regimes (`M`)    | 1, 2, 3, 4 |
+| Timesteps (`T`)  | 200, 400, 800, 1600 |
+| Replications     | 150 per cell |
 
-## Notes
+## Repository structure
 
-- All source paths are relative to the project root directory
-- All functions use consistent snake_case naming convention
-- Deprecated version 1 files are archived in `archive/old_versions/`
-- Large data files (`.rds`) are gitignored to keep repository size manageable
+```
+R/
+  dependencies.R              Package checks (fail-fast; no auto-install)
+  generation/                 Data generation
+    generate_A.R              Temporal network A (stable VAR coefficients)
+    generate_K.R              Contemporaneous precision matrix K
+    generate_netdyn.R         Assemble one regime's dynamics (A, K, Sigma, AC)
+    generate_transmat.R       Markov transition matrix
+    generate_random.R         Random signed edge weights
+    generate_timeseries.R     Simulate the MSAR series across the design grid
+    check_stability.R         VAR stability check
+  estimation/                 MSAR fitting (NHMSAR-derived, see attribution)
+    fit_msar.R                Core EM fit
+    init_theta_msar.R         Parameter initialisation
+    as_theta_msar.R           thetaMSAR coercion
+    em_converged.R            EM convergence test
+    mstep_hh_lasso_msar.R     cv.glmnet LASSO M-step (opt-in engine)
+    mstep_hh_lasso_msar_bic.R lars + BIC M-step (default engine)
+    mstep_hh_reduct_msar.R    Reduction (support-copy) M-step
+    init_and_fit_msar_lasso.R Init + fit wrapper with retries
+    estimate_MSAR.R           Parallel estimation driver (raw estimates only)
+    match_regimes.R           Match estimated to true regimes (Hungarian)
+    reconstruct_regime_sequence.R  Relabel the estimated regime sequence
+    stabilize_sigma.R         Opt-in Sigma eigenvalue stabilisation
+  utils/
+    average_controllability.R Average controllability of A
+    senspec.R / undirected_metrics.R  Edge-recovery metrics
+    assign_regimes.R          Hungarian assignment helper
+    regime_sequence_recovery.R  Hard sequence + Cohen's kappa
+  analysis/                   Scoring, modelling, tables, plots
+    stat_analysis.R           Analysis entry point (source after loading the .rds)
+    data_prep.R transform.R descriptives.R modeling.R sensitivity.R
+    sequence_models.R feasibility.R exports.R plots.R reporting.R output_paths.R
+scripts/
+  MSAR_ts_analysis_NHMSAR.R   Simulation + estimation driver
+  migrate_rds_names.R         One-off Beta/Kappa -> A/K rename for old .rds
+docs/                         Methodological notes (M-step, Sigma/K degeneracy)
+output/                       Final figures (plots/) and tables (results/); the
+                              published dataset (.rds) is added via Git LFS
+```
 
-## License
+## Configuration
 
-[Add your license information here]
+The main knobs are set at the top of `scripts/MSAR_ts_analysis_NHMSAR.R`; the
+LASSO engine is selected via `options()` (applied per worker via
+`lasso_control`). See `docs/MSTEP_LASSO_CV_PENALIZATION.md` for the engine
+comparison.
 
-## Contact
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| `simmsar_lasso_engine`   | `"bic"`   | First M-step engine: `"bic"` (lars + BIC) or `"cvglmnet"` (cross-validated LASSO) |
+| `simmsar_lasso_reselect` | `FALSE`   | `cvglmnet` only: re-select the LASSO support every EM iteration instead of freezing iteration 1 |
+| `min_edg_val` (`MIN_EDG_VAL`) | `0.05` | Edge-detection threshold; must match the generation intent |
+| `AC_HORIZON`             | `25`      | Horizon `T_ac` for average controllability; must equal the generation default |
+| `MaxIter`                | `200`     | Maximum EM iterations per fit |
+| `workers`                | `5`       | Parallel worker processes (`NULL` = physical cores − 1) |
 
-[Add your contact information here]
+## Reproducibility
+
+The driver sets `set.seed(20260701)`. Parallel sections use `future.seed = TRUE`,
+which derives an L'Ecuyer-CMRG RNG stream from the current seed: the same script,
+seed and worker count reproduce results run-to-run.
+
+Note, however, that exact numeric values differ from any prior **serial** run
+using the same `set.seed()`. Parallel workers consume random draws in a different
+order, and generation additionally draws residuals via a once-per-cell Cholesky
+factorisation. This is expected and statistically immaterial — it changes which
+particular replicates land where, not the design or the conclusions.
+
+## Known failure modes
+
+- **Non-convergence / estimation failure** is concentrated in the hardest cells
+  (short series `T = 200`, high density, `N = 8`, `M = 4`), where the EM step can
+  abort or every estimated regime collapses to zero variance. Such fits are
+  logged (`summarize_failures()`) and excluded; `R/analysis/sensitivity.R`
+  checks that this missingness does not bias the reported estimates.
+- **Near-singular `est_Sigma`.** The estimated residual covariance can be
+  ill-conditioned; inversion to `K` is gated on its condition number
+  (`K_COND_MAX`) and flagged invalid rather than propagated. An opt-in
+  eigenvalue stabilisation is available (`simmsar_sigma_stab`, default off). See
+  `docs/SIGMA_KAPPA_DEGENERACY_DIAGNOSIS.md`.
+- **`K_corr` is `NaN`** when the thresholded estimated `K` has no surviving
+  off-diagonal edge in any regime (Pearson correlation is undefined for a
+  constant vector). This is a scoring artifact of an empty estimated network, not
+  an estimation crash.
+
+## Published dataset
+
+`output/MSAR_models_final.rds` (with `output/CONFIG_final.rds`) is the final run
+reported in the thesis: 21,591 of the 21,600 expected fits completed
+successfully. It is tracked via Git LFS. Load it and source
+`R/analysis/stat_analysis.R` to regenerate every table and figure under
+`output/`.
+
+## License & attribution
+
+This project is released under the **GNU General Public License v3.0** (see
+`LICENSE`).
+
+The estimation core (`R/estimation/fit_msar.R`, `init_theta_msar.R`,
+`as_theta_msar.R`, `em_converged.R`, `mstep_hh_lasso_msar.R`,
+`mstep_hh_lasso_msar_bic.R`, `mstep_hh_reduct_msar.R`) is adapted from the
+**NHMSAR** package by Valerie Monbet (obtained from the CRAN archive; original
+license GPL). The adaptations add LASSO / reduction M-step engines and opt-in
+Sigma stabilisation; each file carries an attribution header.
+
+If you use this code, please cite the thesis: *[AUTHOR] ([YEAR]). [THESIS TITLE].
+[INSTITUTION].*

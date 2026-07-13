@@ -192,7 +192,7 @@ do.call(options, lasso_control)
 # -----------------------------------------------------------------------------
 # Parallelisierung
 # -----------------------------------------------------------------------------
-workers <- 5   # NULL = automatisch (physische Kerne - 1); explizit z.B. workers <- 5
+workers <- 5   # NULL = automatic (physical cores - 1); or set explicitly, e.g. workers <- 5
 
 # -----------------------------------------------------------------------------
 # Output Parameters
