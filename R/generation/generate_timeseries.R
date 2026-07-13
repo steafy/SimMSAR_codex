@@ -1,124 +1,3 @@
-#' Generate MSAR Time Series Data
-#'
-#' Generates multivariate time series data from Markov-Switching Autoregressive (MSAR)
-#' models with network dynamics. Creates random network dynamics for each regime and
-#' simulates time series using regime-switching behavior controlled by a transition matrix.
-#'
-#' @param Density Numeric vector of network edge densities (0 to 1).
-#'   Defines the proportion of possible edges that exist in the network.
-#' @param N Integer vector of node counts. Number of variables/nodes in the network.
-#' @param M Integer vector of regime counts. Number of distinct network states.
-#' @param T Integer vector of time steps. Length of each generated time series (excluding warmup).
-#' @param n_ts Integer. Number of time series to generate per condition.
-#' @param warmup Integer. Number of initial time steps to discard (allows dynamics to stabilize).
-#' @param totTime Integer vector. Total time steps including warmup (typically T + warmup).
-#' @param mean_rep Numeric. Mean length of regime repetitions in sequence (currently unused).
-#' @param sd_rep Numeric. Standard deviation for regime repetition lengths (currently unused).
-#' @param min_edg_val Numeric. Minimum absolute edge weight. Edges below this are set to zero.
-#' @param max_edg_val Numeric. Maximum absolute edge weight.
-#' @param remain_lower Numeric. Lower bound for probability of remaining in same regime (0 to 1).
-#' @param remain_upper Numeric. Upper bound for probability of remaining in same regime (0 to 1).
-#'
-#' @return A tibble (timeseries_data object) with the following columns:
-#'   \describe{
-#'     \item{timesteps}{Number of time steps in the series (excluding warmup)}
-#'     \item{density}{Edge density of the network}
-#'     \item{nodes}{Number of nodes in the network}
-#'     \item{regimes}{Number of regimes in the model}
-#'     \item{ts_id}{Time series ID (1 to n_ts)}
-#'     \item{timeseries_data}{List-column: Matrix of time series data (T × N)}
-#'     \item{regime_sequence}{List-column: Vector of regime indices for each time step}
-#'     \item{regime_dynamics}{List-column: List of network dynamics for each regime}
-#'     \item{transmat}{List-column: Transition probability matrix between regimes}
-#'   }
-#'
-#'   Each regime_dynamics list contains:
-#'   \itemize{
-#'     \item mu: Mean vector
-#'     \item A: Autoregressive coefficient matrix (temporal network)
-#'     \item sigma: Residual covariance matrix
-#'     \item K: Precision matrix (contemporaneous network)
-#'     \item AC: Average controllability for A
-#'   }
-#'
-#' @param workers Integer. Number of parallel worker processes (via
-#'   \code{future::multisession}, portable across Windows/Mac/Linux). Defaults to
-#'   \code{max(1, parallel::detectCores(logical = FALSE) - 1)}. Pass
-#'   \code{workers = 1} for fully sequential execution (debugging / sanity check).
-#'
-#' @details
-#' Each \emph{generation cell} -- one \code{(density, nodes, regimes, set_id)}
-#' combination -- is fully independent and is the unit dispatched to a parallel
-#' worker. Within a cell the function:
-#'
-#' 1. **Generates network dynamics** ONCE (temporal + contemporaneous networks,
-#'    covariance matrices) via \code{generate_netdyn}, repeating until the minimum
-#'    edge-value constraints are satisfied, plus a transition matrix.
-#'
-#' 2. **Simulates one VAR(1) series per requested \code{T}**, reusing those
-#'    dynamics (dynamics do not depend on \code{T}):
-#'    \itemize{
-#'      \item Initial state sampled from uniform(0, 5)
-#'      \item Regime transitions follow a Markov process via transition matrix
-#'      \item State evolution: X[t] = mu + A(X[t-1] - mu) + epsilon
-#'      \item epsilon ~ MVN(0, sigma) of the regime active at step t
-#'    }
-#'
-#' PARALLELISATION / PERFORMANCE (2026-06):
-#' \itemize{
-#'   \item \strong{Across cells}: \code{future.apply::future_lapply()} over
-#'     \code{future::multisession} (portable, unlike \code{multicore} which is
-#'     sequential on Windows). \code{future.seed = TRUE} gives one independent
-#'     L'Ecuyer-CMRG stream per cell, so results are reproducible run-to-run for a
-#'     fixed grid AND invariant to \code{workers} (worker count does not change
-#'     the numbers). Cell-isolated streams also make the rejection-sampling retry
-#'     count in one cell unable to perturb any other cell.
-#'   \item \strong{Cholesky residuals}: the per-regime residual covariance is
-#'     Cholesky-factored ONCE per cell (\eqn{R'R = \Sigma}); each timestep then
-#'     draws \eqn{\epsilon = R' z,\ z \sim N(0, I)}, distributionally identical to
-#'     the old per-step \code{mvtnorm::rmvnorm()} but without re-factorising
-#'     \eqn{\Sigma} on every one of the (up to thousands of) steps.
-#' }
-#' Because both changes alter the RNG-draw mechanism, exact numeric values differ
-#' from any pre-2026-06 SERIAL run with the same \code{set.seed()}; the
-#' distribution is unchanged and this is a one-time re-baseline.
-#'
-#' A live cross-process progress bar is shown via \pkg{progressr} when installed.
-#'
-#' @note
-#' Dependencies are loaded centrally via R/dependencies.R. The driver uses
-#' \pkg{tibble} (output assembly), \pkg{future} / \pkg{future.apply} (parallelism)
-#' and \pkg{progressr} (optional progress bar). The per-worker generation path
-#' itself is pure base/stats R (no attached packages required in workers).
-#'
-#' @seealso
-#' \code{\link{generate_netdyn}} for network dynamics generation
-#' \code{\link{generate_transmat}} for transition matrix generation
-#'
-#' @examples
-#' \dontrun{
-#' # Generate simple 2-regime time series
-#' ts_data <- generate_timeseries(
-#'   Density = 0.3,
-#'   N = 4,
-#'   M = 2,
-#'   T = 1000,
-#'   n_ts = 10,
-#'   warmup = 50,
-#'   totTime = 1050,
-#'   mean_rep = 10,
-#'   sd_rep = 2,
-#'   min_edg_val = 0.05,
-#'   max_edg_val = 1,
-#'   remain_lower = 0.33,
-#'   remain_upper = 0.66
-#' )
-#'
-#' # Access specific time series
-#' ts_data %>% filter(timesteps == 1000, density == 0.3, ts_id == 1)
-#' }
-#'
-#' @export
 # Dependencies are loaded centrally via R/dependencies.R
 # Driver: tibble, future, future.apply, progressr (optional), parallel.
 # Per-worker generation path: base/stats only.
@@ -141,6 +20,7 @@ source("R/generation/generate_transmat.R")
 # (Density, N, M, set_id) combination: it owns its network dynamics and produces
 # one simulated series per requested T (dynamics are reused across T). This is
 # the unit dispatched to a parallel worker.
+# Enumerate the design cells (one per Density x N x M combination) to iterate over.
 build_generation_cells <- function(Density, N, M, n_ts) {
   grid <- expand.grid(
     set_id = seq_len(n_ts), k = seq_along(M), j = seq_along(N), i = seq_along(Density),
@@ -163,6 +43,9 @@ build_generation_cells <- function(Density, N, M, n_ts) {
 # Cholesky factor:  eps = t(R) %*% z  with  R'R = Sigma  =>  Cov(eps) = Sigma.
 # Distributionally identical to mvtnorm::rmvnorm(1, 0, Sigma), without
 # re-factorising Sigma on every step.
+# Simulate a single MSAR series: draw the regime path from `transmat`, then at
+# each step draw VAR residuals via the pre-computed Cholesky factor chol_sigma of
+# the active regime's Sigma and propagate the AR(1) dynamics (with warmup).
 simulate_one_series <- function(dynamics, transmat, chol_sigma, N_j, M_k, totTime_t, warmup) {
   init <- runif(N_j, min = 0, max = 5)
   Rseq <- integer(totTime_t - 1)
@@ -190,6 +73,9 @@ simulate_one_series <- function(dynamics, transmat, chol_sigma, N_j, M_k, totTim
 # per-regime Cholesky), then simulate one series per T. Returns one assembled
 # row-list per T, each tagged with the historical nested-loop order key so the
 # final tibble can be restored to the original row order.
+# Generate all n_ts replicate series for one design cell: build the true regime
+# dynamics + transition matrix, Cholesky-factor each regime's Sigma once, and
+# simulate the replicates. Runs as one parallel task.
 generate_one_cell <- function(cell, T, totTime, n_T, n_D, n_N, n_M, n_ts,
                               warmup, min_edg_val, max_edg_val,
                               remain_lower, remain_upper, max_attempts,
@@ -255,6 +141,12 @@ generate_one_cell <- function(cell, T, totTime, n_T, n_D, n_N, n_M, n_ts,
   rows
 }
 
+# Simulate MSAR time-series data across the full design grid (Density x N x M x T)
+# with n_ts replicates per cell, returning a tibble whose list-columns hold the
+# simulated series and the true dynamics. Parallel over cells via
+# future::multisession; residuals use a once-per-cell Cholesky factorisation. See
+# README "Reproducibility" for the future.seed / serial-vs-parallel caveat.
+# Notable arg: workers (parallel processes).
 generate_timeseries <- function(Density,
                                 N,
                                 M,
@@ -356,12 +248,7 @@ generate_timeseries <- function(Density,
 }
 
 
-#' Print Method for timeseries_data
-#'
-#' @param x A timeseries_data object
-#' @param ... Additional arguments (unused)
-#'
-#' @export
+# Print method: design grid and series counts for a timeseries_data object.
 print.timeseries_data <- function(x, ...) {
   cat("MSAR Timeseries Data\n")
   cat("════════════════════════════════════════════════════════════════\n")

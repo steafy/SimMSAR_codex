@@ -46,8 +46,8 @@ source("R/analysis/reporting.R")      # FINAL: model-quality summary
 
 options(warn = 1)
 
-# Scoring constants (now that metrics are computed in analysis, not estimation).
-# These are the revisable scoring decisions the refactor was about:
+# Scoring constants (metrics are computed here in analysis, not in estimation).
+# These are the revisable scoring decisions:
 MIN_EDG_VAL    <- 0.05   # edge-detection threshold; must match the generation intent
 AC_HORIZON     <- 25     # T_ac for average_controllability(); MUST equal generation's default
 K_COND_MAX <- 1e6    # max condition number of est_Sigma before K is flagged invalid

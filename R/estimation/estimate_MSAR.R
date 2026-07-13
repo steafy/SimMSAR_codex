@@ -1,127 +1,3 @@
-#' Estimate MSAR Models from Time Series Data (raw estimates only, parallel)
-#'
-#' Estimation pipeline that fits Markov-Switching Autoregressive (MSAR) models to
-#' each simulated time series and returns the \emph{raw, uninterpreted} estimates
-#' together with the regime matching / sequence reconstruction that has to happen
-#' while the EM fit object is still in memory. It deliberately does NOT compute
-#' any derived outcome metric (correlations, NRMSE, sensitivity/specificity,
-#' K inversion, average controllability, regime-sequence accuracy): all of
-#' that now lives in the analysis pipeline (\code{R/analysis/}) and is computed
-#' from the stored matrices, so every scoring decision is revisable without
-#' re-running this expensive step.
-#'
-#' @param Density Numeric vector. Edge densities used in data generation.
-#' @param N Integer vector. Numbers of nodes in networks.
-#' @param M Integer vector. Numbers of regimes.
-#' @param T Integer vector. Time series lengths.
-#' @param n_ts Integer. Number of time series per condition.
-#' @param order Integer. AR order for the VAR model (typically 1).
-#' @param MaxIter Integer. Maximum EM algorithm iterations.
-#' @param verbose Logical. If TRUE, prints detailed progress messages. Note:
-#'   with parallel workers, message()/cat() output from individual fits may be
-#'   interleaved/delayed; this only affects what you see on screen, not results.
-#' @param min_edg_val Numeric. Retained for call-site compatibility but
-#'   \strong{no longer used here}: edge thresholding is a scoring decision and
-#'   now lives in the analysis pipeline (\code{compute_recovery_metrics()}),
-#'   which applies the threshold to the stored raw \code{est_A} / inverted
-#'   \code{est_K}. Pass the intended threshold there instead.
-#' @param Timeseries_data Tibble. Output from \code{generate_timeseries} containing
-#'   simulated data and true dynamics in tibble format with list-columns.
-#' @param workers Integer. Number of parallel worker processes (via
-#'   \code{future::multisession}, which works identically on Windows/Mac/Linux).
-#'   Defaults to \code{max(1, parallel::detectCores(logical = FALSE) - 1)}, i.e.
-#'   one less than the number of PHYSICAL cores -- this is a conservative
-#'   starting point for compute-bound numerical work (EM + LASSO), where
-#'   hyperthreading on logical cores typically buys only a modest amount of
-#'   extra throughput. Pass \code{workers = 1} to fall back to fully sequential
-#'   execution (e.g. for debugging or a sanity-check comparison run).
-#' @param lasso_control Optional named list of \code{simmsar_lasso_*} options
-#'   controlling the LASSO first-M-step engine (see
-#'   \code{docs/MSTEP_LASSO_CV_PENALIZATION.md} and
-#'   \code{R/estimation/mstep_hh_lasso_msar.R}). It is applied via
-#'   \code{options()} \emph{inside each worker} (options do not propagate to
-#'   future workers), so it is the correct way to configure the penalization for
-#'   a parallel run. \code{NULL} (default) leaves the library defaults in force
-#'   (\code{engine="bic"}, i.e. the legacy lars+BIC step). Build it in the
-#'   calling script, e.g. \code{list(simmsar_lasso_engine = "cvglmnet",
-#'   simmsar_lasso_reselect = TRUE)}.
-#'
-#' @return An \code{msar_results} tibble with \strong{one row per regime per
-#'   successfully fitted time series} and only the raw quantities:
-#'   \describe{
-#'     \item{timesteps, density, nodes, regimes, ts_id, regime_id}{Condition / regime identifiers}
-#'     \item{orig_A, est_A}{True / estimated temporal network (raw, NOT thresholded)}
-#'     \item{orig_K}{True contemporaneous precision matrix (pass-through from generation)}
-#'     \item{orig_Sigma, est_Sigma}{True / estimated residual covariance. \code{est_Sigma}
-#'       is stored as-is, however well- or ill-conditioned; it is NOT inverted here.}
-#'     \item{orig_AC}{True A average controllability (pass-through from generation)}
-#'   }
-#'   \code{est_K}, \code{est_AC} and all derived metrics are produced
-#'   downstream in analysis, not here.
-#'
-#'   A fit-level table (one row per \code{ts_id}/condition, NOT per regime) is
-#'   attached via \code{attr(result, "fit_results")} with columns
-#'   \code{timesteps, density, nodes, regimes, ts_id, orig_TPM, est_TPM,
-#'   orig_regime_sequence, est_regime_sequence}. The estimated TPM and sequence
-#'   are relabelled with the same A-based matching permutation as the
-#'   per-regime table, so regime \code{m} means the same thing across all stored
-#'   objects. \code{(density, nodes, regimes, ts_id)} uniquely identifies the
-#'   reused generating parameter set, so analysis can build the random-effects
-#'   grouping factor from it.
-#'
-#'   A diagnostic log of discarded fits (reason + design cell) is attached via
-#'   \code{attr(result, "failure_log")}; summarise it with
-#'   \code{\link{summarize_failures}}.
-#'
-#' @details
-#' Per time series: (1) fit via \code{init_and_fit_msar_lasso} (EM + LASSO, with
-#' its own retry logic, unchanged); (2) match estimated regimes to true regimes
-#' (Hungarian algorithm on vectorised A correlations, \code{\link{match_regimes}});
-#' (3) hard-decode the smoothed probabilities into a regime sequence and relabel
-#' it with the matching permutation (\code{\link{reconstruct_regime_sequence}});
-#' (4) store the raw matrices. No edge thresholding, no covariance inversion, no
-#' near-singular-Sigma gate -- those moved to analysis.
-#'
-#' PARALLELISATION (2026-06): every (T, Density, N, M, replication) combination
-#' is a fully independent fit on its own simulated series -- embarrassingly
-#' parallel. Implemented via \code{future.apply::future_lapply()} over
-#' \code{future::multisession} workers (portable: identical on Windows/Mac/
-#' Linux, unlike \code{future::multicore} which silently falls back to
-#' sequential on Windows). Three points this design specifically addresses:
-#' \itemize{
-#'   \item \strong{Memory}: \code{Timeseries_data} is sliced into one minimal
-#'     per-task payload BEFORE the parallel section (\code{build_task_data()}),
-#'     and the big tibble is then dropped (\code{rm() + gc()}) from the calling
-#'     process. \code{future_lapply} ships each worker only the slice of tasks
-#'     it actually runs, not the whole input -- avoiding an N-times-duplicated
-#'     copy of a potentially multi-GB object across N worker processes.
-#'   \item \strong{Reproducibility}: \code{future.seed = TRUE} derives an
-#'     L'Ecuyer-CMRG parallel RNG stream from the current \code{.Random.seed},
-#'     giving fully reproducible results across repeated runs of the SAME
-#'     script -- but the actual numeric values will differ from any prior
-#'     SERIAL run with the same \code{set.seed()}, since draws are consumed in
-#'     a different order. This is expected and statistically immaterial.
-#'   \item \strong{Load balancing}: \code{future.scheduling = Inf} dispatches
-#'     one task at a time rather than pre-chunking, because fit cost is highly
-#'     heterogeneous across the design grid (e.g. N=8/T=4000/M=4 is vastly more
-#'     expensive than N=4/T=250/M=1); per-task dispatch overhead is negligible
-#'     next to multi-second fit times, so this trades a little overhead for
-#'     much better balance across workers.
-#' }
-#' Packages are NOT part of \code{future}'s automatic global-export (only plain
-#' R objects/closures are), so each worker re-attaches them via
-#' \code{ensure_worker_packages()}, guarded to run only once per worker process
-#' (multisession workers are a persistent pool reused across tasks, not
-#' respawned per call).
-#'
-#' @note Dependencies are loaded centrally via R/dependencies.R.
-#'
-#' @seealso
-#' \code{\link{generate_timeseries}}, \code{\link{init_and_fit_msar_lasso}},
-#' \code{\link{match_regimes}}, \code{\link{reconstruct_regime_sequence}},
-#' \code{\link{summarize_failures}}
-#'
-#' @export
 # Dependencies are loaded centrally via R/dependencies.R
 
 # Load functions from NHMSAR
@@ -570,6 +446,17 @@ fit_one_cell <- function(cell, order, MaxIter, verbose, progress_fun = NULL,
 }
 
 
+# Fit Markov-Switching AR models to every simulated series and return only the
+# RAW estimates (orig/est_A, orig_K, orig/est_Sigma, orig_AC) plus regime
+# matching + sequence reconstruction (done while the EM fit is still in memory).
+# No derived metric is computed here -- all scoring (correlation, NRMSE,
+# sens/spec, K inversion, controllability) lives in R/analysis/ and stays
+# revisable from the stored matrices. Embarrassingly parallel via
+# future::multisession; see README "Reproducibility" for the future.seed /
+# serial-vs-parallel caveat. Notable args: workers (parallel processes),
+# lasso_control (list of simmsar_lasso_* options, applied inside each worker),
+# MaxIter (EM cap); min_edg_val is retained for call compatibility but unused
+# (edge thresholding moved to the analysis pipeline).
 estimate_MSAR <- function(Density, N, M, T, n_ts, order, MaxIter, verbose, min_edg_val,
                           Timeseries_data, workers = NULL, lasso_control = NULL) {
   
@@ -684,45 +571,15 @@ estimate_MSAR <- function(Density, N, M, T, n_ts, order, MaxIter, verbose, min_e
 }
 
 
-#' Summarise Discarded-Fit Reasons from estimate_MSAR()
-#'
-#' Tabulates the diagnostic failure log attached as
-#' \code{attr(result, "failure_log")} by coarse error type, estimation stage,
-#' and design cell. Use this to diagnose the missingness mechanism: which kind
-#' of numerical failure dominates which condition.
-#'
-#' @param msar_results An msar_results object from \code{estimate_MSAR()}.
-#' @param by Character vector of design columns to break failures down by.
-#'   Default groups by all four design factors.
-#'
-#' @return Invisibly, a list with \code{by_type}, \code{by_cell}, \code{raw}.
-#'   Also prints \code{by_type} for a quick overview.
-#'
-#' @details
-#' \code{stage} distinguishes \emph{where} the fit was dropped:
-#' \itemize{
-#'   \item \code{fit_null}: EM aborted on error/warning across all retries.
-#'   \item \code{zero_var_A}: EVERY estimated A had zero variance, so regime
-#'     matching was undefined for all regimes and the whole fit was discarded.
-#'   \item \code{partial_zero_var_A}: SOME (but not all) estimated As had
-#'     zero variance. The healthy regimes were matched and their per-regime rows
-#'     ARE retained for RQ1-3 (so this does NOT reduce the A_corr/K_corr/
-#'     AC sample); only the fit-level sequence row is withheld, so the fit is
-#'     excluded from RQ4 exactly as a full zero_var_A drop would be. Logged for
-#'     transparency, not because the whole fit was dropped.
-#'   \item \code{no_data}: no simulated series matched the condition (lookup miss).
-#'   \item \code{seq_length_mismatch}: the EM fit and regime matching succeeded
-#'     (so this replicate's regime_rows -- and hence A_corr/K_corr/
-#'     AC_corr_pearson -- are unaffected and already included), but the
-#'     true and reconstructed regime sequences had different lengths, so the
-#'     fit-level sequence row needed for RQ4 could not be built. RQ4-specific
-#'     missingness only; does not reduce the sample for RQ1--RQ3.
-#' }
-#' The near-singular \code{est_Sigma} case is NOT logged here any more -- it is a
-#' per-regime validity flag handled in analysis (\code{sigma_validity_log}).
-#'
-#' @seealso \code{\link{estimate_MSAR}}, \code{summarize_sigma_validity}
-#' @export
+# Tabulate the discarded-fit log (attr "failure_log") by error type, stage and
+# design cell, to diagnose the missingness mechanism. `stage` distinguishes where
+# a fit was dropped: fit_null (EM aborted), zero_var_A (all estimated A
+# degenerate -> whole fit dropped), partial_zero_var_A (some regimes degenerate;
+# healthy regime rows kept for RQ1-3, only the fit-level sequence row withheld ->
+# excluded from RQ4), no_data (condition lookup miss), seq_length_mismatch (fit
+# fine, but true/reconstructed sequence lengths differ -> RQ4-only missingness).
+# Near-singular est_Sigma is not logged here; it is a per-regime validity flag in
+# analysis (sigma_validity_log). Returns (invisibly) by_type / by_cell / raw.
 summarize_failures <- function(msar_results,
                                by = c("timesteps", "density", "nodes", "regimes")) {
   
@@ -763,12 +620,7 @@ summarize_failures <- function(msar_results,
 }
 
 
-#' Print Method for msar_results
-#'
-#' @param x An msar_results object
-#' @param ... Additional arguments (unused)
-#'
-#' @export
+# Print method: condition grid and fit counts for an msar_results object.
 print.msar_results <- function(x, ...) {
   cat("MSAR Results (raw estimates)\n")
   cat("════════════════════════════════════════════════════════════════\n")

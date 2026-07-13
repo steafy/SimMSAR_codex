@@ -87,25 +87,12 @@ PACKAGES <- list(
 # Flatten the list to get all packages (CRAN + archived)
 ALL_PACKAGES <- c(names(ARCHIVED_PACKAGES), unlist(PACKAGES, use.names = FALSE))
 
-#' Check which packages are installed
-#'
-#' @return Named logical vector indicating which packages are installed
 check_installed_packages <- function() {
   installed <- ALL_PACKAGES %in% installed.packages()[, "Package"]
   names(installed) <- ALL_PACKAGES
   return(installed)
 }
 
-#' Install missing packages
-#'
-#' CRAN packages are installed via install.packages().
-#' Archived packages (NHMSAR, netcontrol) are rebuilt from their .tar.gz
-#' source on the CRAN archive via devtools::install_url().
-#'
-#' @param packages Character vector of package names. If NULL (default),
-#'   checks all required packages.
-#' @param repos Repository to install from. Default is CRAN.
-#' @return Invisibly returns TRUE if all packages installed successfully
 install_missing_packages <- function(packages = NULL,
                                     repos = "https://cloud.r-project.org") {
   if (is.null(packages)) {
@@ -154,10 +141,6 @@ install_missing_packages <- function(packages = NULL,
   }
 }
 
-#' Load all required packages
-#'
-#' @param quietly Logical. Should packages be loaded quietly? Default TRUE.
-#' @return Invisibly returns a named logical vector of successfully loaded packages
 load_packages <- function(quietly = TRUE) {
   message("Loading required packages...")
 
@@ -185,9 +168,6 @@ load_packages <- function(quietly = TRUE) {
   return(invisible(loaded))
 }
 
-#' Print package dependency summary
-#'
-#' @return Invisibly returns a data frame with package information
 print_package_summary <- function() {
   cat("\n=== SimMSAR Package Dependencies ===\n\n")
 

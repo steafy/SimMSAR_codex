@@ -1,42 +1,6 @@
-#' M-Step with Reduced Parameter Set for MSAR Models
-#'
-#' Maximization step that refines only non-zero parameters identified by LASSO.
-#' More efficient than full LASSO M-step for iterations 2+ of the EM algorithm.
-#'
-#' @param data 3D array of time series data (time × samples × variables).
-#' @param theta Current parameter object (thetaMSAR) with sparse AR matrices.
-#' @param FB Forward-backward output from E-step containing regime probabilities.
-#' @param sigma.diag Logical. Force diagonal covariance matrices. Default: FALSE.
-#' @param verbose Logical. Print progress messages. Default: FALSE.
-#'
-#' @return List of updated parameters with same structure as \code{mstep_hh_lasso_msar}.
-#'
-#' @details
-#' **Reduced Estimation Strategy**:
-#'
-#' After LASSO identifies sparse network structure in iteration 1, this function:
-#' \itemize{
-#'   \item Fixes zero coefficients (keeps network structure)
-#'   \item Re-estimates only non-zero coefficients via weighted OLS
-#'   \item Updates covariance matrices from weighted residuals
-#'   \item Updates transition and prior probabilities
-#' }
-#'
-#' This is much faster than re-running LASSO while maintaining sparsity.
-#'
-#' @note
-#' \itemize{
-#'   \item Used in iterations 2+ when penalty="LASSO" in \code{fit_msar}
-#'   \item Assumes theta already has sparse structure from LASSO
-#'   \item If sigma.diag=TRUE, estimates only diagonal elements of covariance
-#' }
-#'
-#' @seealso
-#' \code{\link{fit_msar}} which calls this function
-#' \code{\link{mstep_hh_lasso_msar}} for initial LASSO M-step
-#'
-#' @keywords internal
-#' @export
+# Reduction (support-copy) M-step: re-estimates AR coefficients on the selected
+# support and updates residual covariances. Adapted from the NHMSAR HH reduction
+# M-step.
 mstep_hh_reduct_msar <-
   function(data, theta, FB, sigma.diag = FALSE, verbose = FALSE)  {
     

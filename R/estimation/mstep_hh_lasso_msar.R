@@ -1,62 +1,9 @@
-#' M-Step with Cross-Validated LASSO Penalty for MSAR Models
-#'
-#' Maximization step of the EM algorithm with a *genuinely penalized*,
-#' cross-validated LASSO for sparse network estimation. Updates autoregressive
-#' parameters, intercepts, and covariance matrices using regime-weighted
-#' observations.
-#'
-#' @param data 3D array of time series data (time × samples × variables).
-#' @param theta Current parameter object (thetaMSAR).
-#' @param FB Forward-backward output from E-step containing regime probabilities.
-#' @param verbose Logical. Print progress messages. Default: FALSE.
-#'
-#' @return List of updated parameters:
-#'   \describe{
-#'     \item{A}{List of lag-1 coefficient matrices (one per regime)}
-#'     \item{A0}{Matrix of intercepts}
-#'     \item{sigma}{List of covariance matrices}
-#'     \item{prior}{Updated regime prior probabilities}
-#'     \item{transmat}{Updated transition matrix}
-#'   }
-#'
-#' @details
-#' For each regime m and each response node id, a weighted LASSO is fit with
-#' \code{glmnet::cv.glmnet()} on the RAW (unweighted) pseudo-observations, with
-#' the E-step regime-membership probabilities \code{gamma} passed via the native
-#' \code{weights=} argument (correct WLS: minimises \eqn{\sum_t w_t (y_t - x_t
-#' b)^2}, unlike the old lars path which multiplied x and y by \code{w} and thus
-#' weighted by \code{w^2}). The penalty parameter \eqn{\lambda} is chosen by
-#' cross-validation, so the estimate is sparse on its own -- \emph{without}
-#' relying on the downstream \code{min_edg_val} threshold.
-#'
-#' Two design knobs (see \code{docs/MSTEP_LASSO_CV_PENALIZATION.md}), read from
-#' options so they can be A/B tested without changing call sites:
-#' \itemize{
-#'   \item \code{getOption("simmsar_lasso_lambda", "1se")}: \code{"1se"} (sparser)
-#'     or \code{"min"} (lower CV error) rule for the chosen lambda.
-#'   \item \code{getOption("simmsar_lasso_refit", TRUE)}: if \code{TRUE},
-#'     coefficients on the selected support are re-estimated by unpenalized
-#'     weighted OLS ("relaxed LASSO", removes shrinkage bias in the edge weights);
-#'     if \code{FALSE}, the shrunk glmnet coefficients are used directly.
-#' }
-#'
-#' Intercepts (\code{A0}) and covariances (\code{sigma}) are computed from the
-#' correctly \code{w}-weighted sufficient statistics, exactly as before.
-#'
-#' Typically used only in the first EM iteration; subsequent iterations inherit
-#' the selected support via \code{\link{mstep_hh_reduct_msar}}.
-#'
-#' @note Dependencies loaded centrally via R/dependencies.R (glmnet required).
-#'
-#' @seealso
-#' \code{\link{fit_msar}} which calls this function
-#' \code{\link{mstep_hh_reduct_msar}} for the reduced M-step (iterations 2+)
-#'
-#' @keywords internal
-#' @export
 # Dependencies are loaded centrally via R/dependencies.R
 # Required packages: glmnet
 
+# First M-step with a genuine cross-validated LASSO (cv.glmnet) penalty on the AR
+# coefficients (opt-in "cvglmnet" engine; see docs/MSTEP_LASSO_CV_PENALIZATION.md).
+# Adapted from the NHMSAR HH M-step.
 mstep_hh_lasso_msar <-
 function(data,theta,FB,verbose = FALSE)  {
   if (!exists("repmat", mode = "function")) {

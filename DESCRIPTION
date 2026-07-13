@@ -38,4 +38,3 @@ Imports:
     progress
 Suggests:
     testthat (>= 3.0.0)
-RoxygenNote: 7.2.0

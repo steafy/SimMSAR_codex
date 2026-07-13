@@ -1,59 +1,8 @@
-#' Generate Temporal Network Dynamics (A Matrix)
-#'
-#' Generates a stable autoregressive coefficient matrix (A) for VAR(1) models with
-#' specified edge density and weight constraints. Ensures stability by scaling to keep
-#' spectral radius below 1.
-#'
-#' @param N Integer. Number of nodes in the network.
-#' @param Density Numeric (0 to 1). Target proportion of non-zero edges in A.
-#' @param min_edg_val Numeric. Minimum absolute value for non-zero edges.
-#' @param max_edg_val Numeric. Maximum absolute value for non-zero edges.
-#'
-#' @return A list containing:
-#'   \describe{
-#'     \item{A}{Autoregressive coefficient matrix (N × N)}
-#'     \item{A_stability}{Logical. TRUE if stable (spectral radius < 1)}
-#'     \item{sd_A}{Standard deviation of all A values}
-#'     \item{A_str}{Node strength vector (row sums)}
-#'     \item{A_mean_str}{Mean node strength}
-#'     \item{A_dens}{Empirical edge density (proportion of non-zero elements)}
-#'     \item{A_weigh_dens}{Weighted density (mean absolute value)}
-#'   }
-#'
-#' @details
-#' The function follows these steps:
-#'
-#' 1. **Initial generation**: Creates sparse A matrix with random edge weights
-#'    sampled uniformly from [min_edg_val, max_edg_val] with random signs
-#'
-#' 2. **Stability enforcement**: Scales A to ensure spectral radius < 1:
-#'    \itemize{
-#'      \item Computes eigenvalues and spectral radius
-#'      \item If spectral radius >= 1, scales by 0.99/spectral_radius
-#'    }
-#'
-#' 3. **Edge adjustment**: Re-adjusts non-zero edges to be within [min_edg_val, max_edg_val]
-#'    while preserving signs and stability
-#'
-#' 4. **Statistics**: Computes density, strength, and stability metrics
-#'
-#' @note
-#' The stability constraint ensures the VAR process is stationary. This may result in
-#' actual edge densities slightly different from the target Density parameter.
-#'
-#' @seealso
-#' \code{\link{check_stability}} for stability verification
-#' \code{\link{generate_netdyn}} which uses this function
-#'
-#' @examples
-#' \dontrun{
-#' # Generate stable A matrix for 5 nodes with 30% density
-#' A_result <- generate_A(N = 5, Density = 0.3,
-#'                              min_edg_val = 0.05, max_edg_val = 1)
-#' print(A_result$A_stability)  # Should be TRUE
-#' }
-#'
-#' @export
+# Generate the temporal network A (VAR coefficient matrix): N nodes, target edge
+# density, non-zero weights with magnitude in [min_edg_val, max_edg_val] and
+# random sign, resampled until A is stable (spectral radius < 1). Returns a list
+# with A plus summary diagnostics (sd_A, A_str, A_mean_str, A_dens, A_weigh_dens,
+# A_stability).
 generate_A <- function(N, Density, min_edg_val, max_edg_val) {
   
   # Generate A with non-zero elements between min_edg_val & max_edg_val

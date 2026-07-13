@@ -5,10 +5,9 @@
 # Each function keeps the original console output so the orchestrator produces
 # identical logs when calling them in sequence.
 
-# This file now also performs all per-regime SCORING (previously inline in
-# estimate_MSAR.R): edge thresholding, K = solve(Sigma) + validity gate,
-# correlations, sens/spec, NRMSE, and average-controllability correlations.
-# It therefore pulls the relevant estimation-side utils directly.
+# This file performs all per-regime SCORING: edge thresholding, K = solve(Sigma)
+# + validity gate, correlations, sens/spec, NRMSE, and average-controllability
+# correlations. It therefore pulls the relevant estimation-side utils directly.
 source("R/utils/undirected_metrics.R")        # vectorize/senspec/symmetrize upper-tri
 source("R/utils/senspec.R")                    # full-matrix sensitivity/specificity (A)
 source("R/utils/average_controllability.R")    # est_AC from stored est_A
