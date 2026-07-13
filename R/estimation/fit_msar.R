@@ -76,7 +76,7 @@ function(
   ll_history = NULL
   converged = em_converged(0,2*eps,eps);
   par = NULL
-  # ---- opt-in Sigma/Kappa degeneracy trace (uncommitted diagnostic) ---------
+  # ---- opt-in Sigma/K degeneracy trace (uncommitted diagnostic) -------------
   # Guarded by option, OFF by default, so production/parallel runs are unchanged.
   # When on, records per EM iteration and per regime: postmix (effective obs
   # count, from the FB that fed THIS M-step) and rcond(theta$sigma[[j]]) of the
