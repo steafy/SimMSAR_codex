@@ -89,7 +89,15 @@ scale_fill_thesis_d <- function(...) {
 # sens-spec plots). Legend entries use the node counts ("N = 4"), mirroring the
 # "M = 1" Regime convention.
 NODES_COLORS <- c("4" = "#3B5799", "6" = "#359BAA", "8" = "#84D9B1")
-NODE_LABELS  <- c("4" = "N = 4", "6" = "N = 6", "8" = "N = 8")
+NODE_LABELS  <- c("4" = "4", "6" = "6", "8" = "8")
+SENSPEC_COLORS <- c(
+  "4.Sensitivity" = "#3B5799",
+  "6.Sensitivity" = "#359BAA",
+  "8.Sensitivity" = "#84D9B1",
+  "4.Specificity"   = "#C11754",
+  "6.Specificity"   = "#8B1E1E",
+  "8.Specificity"   = "#EF5640"
+  )
 
 # Correlation line plots ONLY (make_line_plots): their own, wider viridis Nodes
 # range so the three heavily overlapping IQR bands separate clearly -- mako's
@@ -120,9 +128,9 @@ NODE_SHAPES <- c("4" = 21, "6" = 24, "8" = 22)
 # titles via OUTCOME_LABELS, so the naming can never drift between figures.
 OUTCOME_LABELS <- c(
   Beta_corr            = "temporal (A)",
-  Kappa_corr           = "kontempor\u00e4r (K)",
-  Beta_ac_corr_pearson = "Kontrollierbarkeit",
-  RQ4                  = "Regimesequenz"
+  Kappa_corr           = "contemporaneous (K)",
+  Beta_ac_corr_pearson = "controllability",
+  RQ4                  = "regime sequence"
 )
 
 # Qualitative quartet (the "Viridis-System" outcome palette: a warm plasma
@@ -135,9 +143,9 @@ OUTCOME_LABELS <- c(
 # palettes are edited in one place.
 OUTCOME_COLORS <- c(
   "temporal (A)"                  = "#2B0594",  # deep violet
-  "kontempor\u00e4r (K)"                  = "#99159F",  # magenta
-  "Kontrollierbarkeit" = "#E26561",  # coral
-  "Regimesequenz"      = "#FDC527"   # gold
+  "contemporaneous (K)"                  = "#99159F",  # magenta
+  "controllability" = "#E26561",  # coral
+  "regime sequence"      = "#FDC527"   # gold
 )
 
 scale_color_thesis_outcome <- function(...) {
@@ -155,7 +163,7 @@ scale_fill_thesis_outcome <- function(...) {
 # retuning the line-plot dots never silently resizes the forest-plot dots and
 # vice versa. Figure 3 (the dumbbell) overrides both with larger points -- a
 # lollipop chart needs prominent markers.
-THESIS_POINT_SIZE      <- 1.5   # line/prediction figures (2, 3, 4): uniform dots
+THESIS_POINT_SIZE      <- 1.7   # line/prediction figures (2, 3, 4): uniform dots
 THESIS_LINEWIDTH       <- 0.9   # line/prediction figures (2, 3, 4)
 THESIS_COEF_POINT_SIZE <- 3     # coefficient forest plot (1), controlled apart
 
@@ -194,13 +202,13 @@ clean_term <- function(x) {
 # --- Facet-strip labels ------------------------------------------------------
 # Density on rows (right-hand strips), labelled directly as low/mid/high so no
 # separate super-label is needed. Regimes on columns as "M = 1" ... "M = 4".
-DENSITY_LABELS <- c("0.25" = "niedrige Dichte",
-                    "0.5"  = "mittlere Dichte",
-                    "0.75" = "hohe Dichte")
+DENSITY_LABELS <- c("0.25" = "low density",
+                    "0.5"  = "mid density",
+                    "0.75" = "high density")
 
 density_labeller <- function(x) {
   out <- DENSITY_LABELS[as.character(x)]
-  ifelse(is.na(out), paste0("Dichte: ", x), out)
+  ifelse(is.na(out), paste0("density: ", x), out)
 }
 regime_labeller <- function(x) paste0("M = ", x)
 
@@ -259,10 +267,10 @@ make_line_plots <- function(corr_results, cols) {
 
     title <- switch(
       col_name,
-      "Beta_corr"           = "Schätzgenauigkeit des temporalen Netzwerks (A)",
-      "Kappa_corr"           = "Schätzgenauigkeit des kontempor\u00e4ren Netzwerks (K)",
-      "Beta_ac_corr_pearson"  = "Schätzgenauigkeit des durchschnittlichen Kontrollierbarkeit",
-      "Beta_ac_corr_spearman" = "Schätzgenauigkeit der durchschnittlichen Kontrollierbarkeit (Spearman)"
+      "Beta_corr"           = "Estimation accuracy of temporal network (A)",
+      "Kappa_corr"           = "Estimation accuracy of contemporaneous Netzwerks (K)",
+      "Beta_ac_corr_pearson"  = "Estimation accuracy of average controllability (AC)",
+      "Beta_ac_corr_spearman" = "Estimation accuracy of average controllability (AC) (Spearman)"
     )
 
     # Median line + empirical IQR (25th-75th percentile) ribbon per Nodes group,
@@ -298,7 +306,7 @@ make_line_plots <- function(corr_results, cols) {
       geom_point(aes(y = med), shape = 21, size = THESIS_POINT_SIZE,
                  alpha = THESIS_POINT_ALPHA, color = "white", stroke = THESIS_POINT_STROKE) +
       coord_cartesian(ylim = c(NA, 1)) +
-      facet_grid(Density ~ Regimes,
+      facet_grid(Regimes ~ Density,
                  labeller = labeller(
                    Density = density_labeller,
                    Regimes = regime_labeller
@@ -311,15 +319,14 @@ make_line_plots <- function(corr_results, cols) {
       scale_fill_manual(values = LINE_NODES_COLORS, labels = NODE_LABELS) +
       labs(
         title    = title,
-        subtitle = "Median (Linie) und IQR (25.-75. Perzentil, Band) über alle Replikationen",
-        x        = "Zeitschritte (T, log-skaliert)",
-        y        = "Korrelation",
-        color    = "Nodes",
-        fill     = "Nodes"
+        x        = "time steps (T, log-scale)",
+        y        = "correlations",
+        color    = "nodes",
+        fill     = "nodes"
       ) +
-      theme_thesis() +
+      theme_thesis(base_size = 12) +
       theme(
-        plot.margin = margin(t = 10, r = 10, b = 10, l = 10),
+        plot.margin = margin(t = 2, r = 4, b = 0, l = 4),
         panel.spacing = unit(0.15, "in")
       ) +
     theme(aspect.ratio = 1)
@@ -329,7 +336,7 @@ make_line_plots <- function(corr_results, cols) {
     # plot filenames below.
     file_prefix <- switch(
       col_name,
-      "Beta_corr"             = "A_corr",
+      "Beta_corr"              = "A_corr",
       "Kappa_corr"             = "K_corr",
       "Beta_ac_corr_pearson"   = "AC_corr",
       "Beta_ac_corr_spearman"  = "AC_corr_spearman",
@@ -346,10 +353,10 @@ make_line_plots <- function(corr_results, cols) {
       filename = output_file,
       plot     = p,
       device   = cairo_pdf,
-      width    = 10,
-      height   = 8,
+      width    = 7,
+      height   = 10,
       units    = "in",
-      dpi      = 800
+      dpi      = 1200
     )
 
     message("saved: ", output_file)
@@ -382,69 +389,81 @@ make_senspec_plots <- function(corr_results) {
     summary_data <- senspec_long %>%
       group_by(Timesteps, Density, Nodes, Regimes, Metric) %>%
       summarise(
-        mean_val = mean(Value, na.rm = TRUE),
-        sd_val   = sd(Value, na.rm = TRUE),
-        .groups  = "drop"
+        median_val = median(Value, na.rm = TRUE),
+        q25        = quantile(Value, 0.25, na.rm = TRUE),
+        q75        = quantile(Value, 0.75, na.rm = TRUE),
+        .groups    = "drop"
       )
-
+    
     dodge <- position_dodge(width = 0.5)
 
     p <- ggplot() +
       geom_errorbar(
         data = summary_data,
-        aes(x = Timesteps,
-            ymin = pmax(mean_val - sd_val, 0), ymax = pmin(mean_val + sd_val, 1),
-            color = Nodes, group = interaction(Nodes, Metric)),
+        aes(x = Timesteps, ymin = q25, ymax = q75,
+            color = interaction(Nodes, Metric), group = interaction(Nodes, Metric)),
         width = 0.3, linewidth = 0.4, position = dodge
       ) +
       geom_line(
         data = summary_data,
-        aes(x = Timesteps, y = mean_val,
-            color = Nodes, group = interaction(Nodes, Metric), linetype = Metric),
+        aes(x = Timesteps, y = median_val,
+            color = interaction(Nodes, Metric), group = interaction(Nodes, Metric),
+            linetype = Metric),
         position = dodge, lineend = "round", linejoin = "round"
       ) +
       geom_point(
         data = summary_data,
-        aes(x = Timesteps, y = mean_val, fill = Nodes, shape = Nodes),
-        position = dodge, size = 3, stroke = 0.5, color = "white"
+        aes(x = Timesteps, y = median_val, fill = interaction(Nodes, Metric),
+            shape = Nodes, group = interaction(Nodes, Metric)),
+        position = dodge, size = 1.8, stroke = 0.4, color = "white"
       ) +
       coord_cartesian(ylim = c(0, 1)) +
-      facet_grid(Density ~ Regimes,
+      facet_grid(Regimes ~ Density,
                  labeller = labeller(
                    Density = density_labeller,
                    Regimes = regime_labeller
                  )) +
-      scale_color_thesis_nodes() +
-      scale_fill_thesis_nodes() +
+      scale_color_manual(values = SENSPEC_COLORS, guide = "none") +
+      scale_fill_manual(values = SENSPEC_COLORS, guide = "none") +
       scale_shape_manual(values = NODE_SHAPES, labels = NODE_LABELS) +
-      labs(
-        title    = paste0("Sensitivit\u00e4t & Spezifit\u00e4t: ",
-                          if (net == "Beta") "temporales Netzwerk (Beta)" else "kontempor\u00e4res Netzwerk (Kappa)"),
-        subtitle = "Fehlerbalken: \u00b11 SD (auf [0, 1] gekappt)",
-        x        = "Zeitschritte (T)",
-        y        = "Mittlerer Wert",
-        color    = "Nodes",
-        shape    = "Nodes",
-        linetype = "Metrik"
+      guides(
+        linetype = guide_legend(override.aes = list(
+          color = c(unname(SENSPEC_COLORS["6.Sensitivity"]),
+                    unname(SENSPEC_COLORS["6.Specificity"]))
+        )),
+        shape = guide_legend(override.aes = list(fill = "grey35", color = "grey35"))
       ) +
-      theme_thesis() +
+      labs(
+        title    = paste0("Sensitivity & Specificity: ",
+                          if (net == "Beta") "temporal network (A)" else "contemporaneous network (K)"),
+        x        = "time steps (T)",
+        y        = "median value",
+        color    = "nodes",
+        shape    = "nodes",
+        linetype = "metric"
+      ) +
+      theme_thesis(base_size = 12) +
       theme(
-        plot.margin = margin(t = 10, r = 10, b = 10, l = 10),
-        panel.spacing = unit(0.15, "in")
-      )
+        plot.margin = margin(t = 2, r = 4, b = 0, l = 4),
+        panel.spacing = unit(0.15, "in"),
+        legend.box = "horizontal",
+        legend.box.just = "right"
+      ) +
+      theme(aspect.ratio = 1)
+    
 
     # Same A/K matrix-notation prefix as the line-plot filenames above.
     net_prefix <- switch(net, "Beta" = "A", "Kappa" = "K")
-    output_file <- plots_file(paste0(net_prefix, "_senspec_plot_with_labels.pdf"))
+    output_file <- plots_file(paste0(net_prefix, "_senspec_plot.pdf"))
 
     ggsave(
       filename = output_file,
       plot     = p,
       device   = cairo_pdf,
-      width    = 10,
-      height   = 8,
+      width    = 7,
+      height   = 10,
       units    = "in",
-      dpi      = 800
+      dpi      = 1200
     )
 
     message("saved: ", output_file)
@@ -498,25 +517,30 @@ get_averaged_main_effects <- function(all_results, seq_recovery, corr_cols) {
     emt <- emmeans::emtrends(model, ~ 1, var = v, weights = "equal", data = data)
     s   <- as.data.frame(summary(emt, infer = c(TRUE, TRUE)))
     data.frame(
-      term     = v,
-      estimate = s[[paste0(v, ".trend")]],
-      se       = s[["SE"]],
-      ci_lo    = s[["asymp.LCL"]],
-      ci_hi    = s[["asymp.UCL"]],
-      p        = s[["p.value"]],
+      term      = v,
+      estimate  = s[[paste0(v, ".trend")]],
+      se        = s[["SE"]],
+      df        = s[["df"]],          # wird bei asymptotic = Inf sein
+      statistic = s[["z.ratio"]],     # heißt bei df=Inf "z.ratio", nicht "t.ratio"
+      ci_lo     = s[["asymp.LCL"]],
+      ci_hi     = s[["asymp.UCL"]],
+      p         = s[["p.value"]],
       stringsAsFactors = FALSE
     )
   }
+  
   # Raw model coefficient for one term (95% CI on the normal approximation).
   raw_coef <- function(cs, term, out_term = term) {
     est <- cs[term, "Estimate"]; se <- cs[term, "Std. Error"]
     data.frame(
-      term     = out_term,
-      estimate = est,
-      se       = se,
-      ci_lo    = est - 1.96 * se,
-      ci_hi    = est + 1.96 * se,
-      p        = cs[term, "Pr(>|t|)"],
+      term      = out_term,
+      estimate  = est,
+      se        = se,
+      df        = cs[term, "df"],
+      statistic = cs[term, "t value"],
+      ci_lo     = est - 1.96 * se,
+      ci_hi     = est + 1.96 * se,
+      p         = cs[term, "Pr(>|t|)"],
       stringsAsFactors = FALSE
     )
   }
@@ -641,24 +665,27 @@ make_coefficient_plots <- function(all_results, corr_cols, seq_recovery = NULL) 
                    height = 0.2, position = position_dodge(width = 0.6)) +
     geom_point(size = THESIS_COEF_POINT_SIZE, alpha = THESIS_COEF_ALPHA,
                position = position_dodge(width = 0.6)) +
-    scale_shape_manual(values = c("p < .05" = 16, "n.s." = 1)) +
+    scale_shape_manual(values = c("p < .05" = 16, "n.s." = 1), guide = "none") +
     scale_color_thesis_outcome() +
     facet_wrap(~ n_cross, scales = "free_y", ncol = 1,
                labeller = as_labeller(c(
-                 "0" = "Haupteffekte (\u00fcber Regimes gemittelt)",
-                 "1" = "2-Wege-Interaktionen",
-                 "2" = "3-Wege-Interaktionen"
+                 "0" = "Main effects (averaged over regimes)",
+                 "1" = "2-way interactions",
+                 "2" = "3-way interactions"
                ))) +
     labs(
-      title    = "Regressionskoeffizienten der prim\u00e4ren Modelle",
-      x        = "Regressionskoeffizient (95%-KI)",
+      title    = "Regression coefficients primary model",
+      x        = "Regression coefficients (95%-ci)",
       y        = NULL,
       color    = "Outcome",
-      shape    = "Signifikanz"
+      shape    = "significant"
     ) +
     coef_guides +
-    theme_thesis(base_size = 10) +
-    theme(panel.grid.minor = element_blank())
+    guides(shape = "none") +
+    theme_thesis(base_size = 15) +
+    theme(panel.grid.minor = element_blank(),
+          plot.margin = margin(t = 2, r = 7, b = 0, l = 4)
+    )
 
   ggsave(plots_file("coefficient_plot_full.pdf"),
          plot = p_coef_full, device = cairo_pdf, width = 10, height = 14, dpi = 600)
@@ -676,16 +703,17 @@ make_coefficient_plots <- function(all_results, corr_cols, seq_recovery = NULL) 
                    height = 0.2, position = position_dodge(width = 0.6)) +
     geom_point(size = THESIS_COEF_POINT_SIZE, alpha = THESIS_COEF_ALPHA,
                position = position_dodge(width = 0.6)) +
-    scale_shape_manual(values = c("p < .05" = 16, "n.s." = 1)) +
+    scale_shape_manual(values = c("p < .05" = 16, "n.s." = 1), guide = "none") +
     scale_color_thesis_outcome() +
     labs(
-      title    = "Haupteffekte (über Regimes gemittelt)",
-      x        = "Regressionskoeffizient (95%-KI)",
+      title    = "Main effects (averaged over regimes)",
+      x        = "Regression coefficients (95%-ci)",
       y        = NULL,
       color    = "Outcome",
-      shape    = "Signifikanz"
+      shape    = "significant"
     ) +
     coef_guides +
+    guides(shape = "none") +
     theme_thesis(base_size = 11) +
     theme(panel.grid.minor = element_blank())
 
@@ -788,23 +816,23 @@ make_prediction_curves <- function(all_results, seq_recovery, dat_sim) {
     # SHARED (fixed) y-axis across all four outcomes so the curves are directly
     # comparable panel-to-panel -- an equal predicted recovery sits at the same
     # height everywhere, rather than each facet zooming to its own range.
-    facet_wrap(~ outcome,  nrow = 2, ncol = 2) +
+    facet_wrap(~ outcome,  nrow = 1, ncol = 4) +
     scale_x_log10(breaks = THESIS_T_POINTS, labels = THESIS_T_POINTS) +
     scale_color_thesis_d(drop = FALSE, limits = lvl_reg, labels = regime_labeller) +
     scale_fill_thesis_d(drop = FALSE, limits = lvl_reg, labels = regime_labeller) +
     labs(
-      title    = "Interaktion von Regimezahl und Zeitreihenlänge",
-      x        = "Zeitschritte (T, log-skaliert)",
-      y        = "Vorhergesagtes Outcome (r bzw. κ)",
-      color    = "Regime",
-      fill     = "Regime"
+      title    = "Interaction of regimes and time steps",
+      x        = "time steps (T, log-scaled)",
+      y        = "predicted outcome (r / κ)",
+      color    = "regime",
+      fill     = "regime"
     ) +
-    theme_thesis() + 
+    theme_thesis(base_size = 12) + 
     theme(aspect.ratio = 1)
     
 
   ggsave(plots_file("regimes_x_timesteps.pdf"),
-         plot = p, device = cairo_pdf, width = 9, height = 9, dpi = 800)
+         plot = p, device = cairo_pdf, width = 9, height = 4, dpi = 800)
   message("saved: ", plots_file("regimes_x_timesteps.pdf"))
 
   invisible(p)
@@ -813,95 +841,141 @@ make_prediction_curves <- function(all_results, seq_recovery, dat_sim) {
 # -----------------------------------------------------------------------------
 # FIGURE 3: Nodes effect by Regime -- interaction profile (A and K only)
 # -----------------------------------------------------------------------------
-# For A (Beta_corr) and K (Kappa_corr), the predicted correlation at Nodes = 4
-# vs. Nodes = 8 (holding logT = 0, Density_s = 0) is drawn as two profile lines
-# across the regimes with the between-Nodes gap shaded: glued-together lines mean
-# no node effect (A), fanning-apart lines a node effect that grows with M (K). An
-# italic "delta = N4 - N8" label quantifies the gap at each regime.
+# For A (Beta_corr) and K (Kappa_corr), the predicted recovery at Nodes = 4 vs.
+# Nodes = 8 (holding logT = 0, Density_s = 0) is drawn as two profile lines
+# across the regimes with the between-Nodes gap shaded, on TWO scales side by
+# side in one 1x4 layout:
+#   - LEFT half  (z-scale, tanh_bt = FALSE): the model's native, linear scale.
+#     This is where the Nodes x Regimes INTERACTION COEFFICIENTS actually live,
+#     so it shows the genuine modelled effect -- for K, the gap narrows as M
+#     rises; for A, it stays negligible throughout.
+#   - RIGHT half (r-scale, tanh_bt = TRUE): the practically interpretable
+#     correlation scale used elsewhere in the results (e.g. Figure 2). Because
+#     tanh() compresses differences near the ceiling and stretches them further
+#     away from it, the SAME (shrinking) z-scale gap can translate into a
+#     WIDER-looking r-scale gap at high M for K -- a ceiling-compression
+#     artifact, not a second, independent effect. Showing both scales side by
+#     side keeps that distinction visible instead of implicit.
+# An italic "delta = N4 - N8" label quantifies the gap at each regime, on
+# whichever scale that panel uses.
 make_nodes_regime_profile <- function(all_results, dat_sim) {
-
+  
   map_nodes   <- .lin_map(dat_sim$Nodes, dat_sim$Nodes_s)
   node_levels <- c("4", "8")
-  reg_levels  <- c("1", "2", "3", "4")
-
-  pts <- lapply(c("Beta_corr", "Kappa_corr"), function(oc) {
-    model <- all_results[[oc]]$primary_model
-    lv    <- levels(model.frame(model)$Regimes)
-    g <- expand.grid(Regimes = lv, Nodes = c(4, 8), stringsAsFactors = FALSE)
-    g$logT <- 0; g$Density_s <- 0; g$Nodes_s <- map_nodes(g$Nodes)
-    out <- .predict_recovery(model, g, tanh_bt = TRUE)
-    out$outcome <- OUTCOME_LABELS[[oc]]
-    out$Nodes   <- factor(as.character(out$Nodes), levels = node_levels)
-    out
-  }) %>% bind_rows()
-
-  pts$outcome <- factor(pts$outcome, levels = unname(OUTCOME_LABELS))
-  # Numeric Regime position so the two Nodes profiles can be drawn as connected
-  # lines (and the between-Nodes gap as a ribbon) across M.
-  pts$Mnum <- as.integer(as.character(pts$Regimes))
-
-  # Wide form: the shaded band spans the two Nodes predictions per M; the delta
-  # = r(N=4) - r(N=8) label quantifies the gap the fanning lines already show.
-  n4 <- pts %>% filter(Nodes == "4") %>% select(outcome, Mnum, N4 = value)
-  n8 <- pts %>% filter(Nodes == "8") %>% select(outcome, Mnum, N8 = value)
-  wide <- left_join(n4, n8, by = c("outcome", "Mnum")) %>%
-    mutate(lo = pmin(N4, N8), hi = pmax(N4, N8),
-           # Clamp deltas that round to zero to exactly 0 so the label reads
-           # "0.00" rather than a stray "-0.00" when the profiles coincide.
-           delta = ifelse(abs(N4 - N8) < 0.005, 0, N4 - N8),
-           dlabel = sprintf("Δ = %.2f", delta))
-
-  reg_breaks <- sort(unique(pts$Mnum))
-
-  # Figure-3-specific Nodes remap (requested): the two profiles use the N4 and
-  # N6 hues (not N4/N8), and the gap is filled with the N4 hue at low alpha --
-  # a translucent haze rather than a separate accent colour. Built from the
-  # central NODES_COLORS so it still tracks any palette change.
-  fig3_line_cols <- c("4" = unname(NODES_COLORS[["4"]]),
-                      "8" = unname(NODES_COLORS[["6"]]))
-  fig3_gap_fill  <- unname(NODES_COLORS[["4"]])
-
-  # Interaction PROFILE plot: one line per Nodes level across the regimes, with
-  # the between-Nodes gap shaded. The message is the SHAPE of the two lines --
-  # glued together = no node effect (A), fanning apart = a node effect that
-  # grows with M (K) -- which a per-regime dumbbell hides by isolating each M.
-  p <- ggplot(pts, aes(x = Mnum, y = value)) +
-    geom_ribbon(data = wide, inherit.aes = FALSE,
-                aes(x = Mnum, ymin = lo, ymax = hi),
-                fill = fig3_gap_fill, alpha = 0.18) +
-    geom_line(aes(color = Nodes, group = Nodes),
-              linewidth = THESIS_LINEWIDTH, alpha = THESIS_LINE_ALPHA,
-              lineend = "round") +
-    geom_point(aes(fill = Nodes), shape = 21, alpha = THESIS_POINT_ALPHA,
-               size = THESIS_POINT_SIZE, color = "white", stroke = THESIS_POINT_STROKE) +
-    geom_text(data = wide, inherit.aes = FALSE,
-              aes(x = Mnum, y = hi, label = dlabel),
-              vjust = -1, fontface = "italic", size = 2.7, color = "grey30") +
-    # SHARED (fixed) y-axis: the whole point of the figure is the SIZE of the
-    # Nodes gap, so both panels must use one scale -- otherwise an identical Δ
-    # (e.g. A at M=4 vs. K at M=1, both 0.01) would render at different heights
-    # because a free y-axis zooms A's narrow range. Fixed scales make the shaded
-    # band directly comparable and honestly show A's effect as the small one.
-    facet_wrap(~ outcome, nrow = 1) +
-    scale_x_continuous(breaks = reg_breaks, labels = regime_labeller(reg_breaks),
-                       expand = expansion(mult = c(0.08, 0.08))) +
-    scale_color_manual(values = fig3_line_cols, labels = NODE_LABELS[c("4", "8")]) +
-    scale_fill_manual(values = fig3_line_cols, labels = NODE_LABELS[c("4", "8")]) +
-    scale_y_continuous(expand = expansion(mult = c(0.06, 0.16))) +
-    labs(
-      title    = "Interaktion von Regime- und Node-Anzahl",
-      x        = "Regime",
-      y        = "Vorhergesagte Korrelationen",
-      color    = "Nodes",
-      fill     = "Nodes"
-    ) +
-    theme_thesis() +
-    theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
-
+  
+  # Predictions on both scales, from the same predictor grid (Regimes x Nodes,
+  # logT = Density_s = 0) -- only the tanh back-transform differs.
+  build_pts <- function(tanh_bt) {
+    lapply(c("Beta_corr", "Kappa_corr"), function(oc) {
+      model <- all_results[[oc]]$primary_model
+      lv    <- levels(model.frame(model)$Regimes)
+      g <- expand.grid(Regimes = lv, Nodes = c(4, 8), stringsAsFactors = FALSE)
+      g$logT <- 0; g$Density_s <- 0; g$Nodes_s <- map_nodes(g$Nodes)
+      out <- .predict_recovery(model, g, tanh_bt = tanh_bt)
+      out$outcome <- OUTCOME_LABELS[[oc]]
+      out$Nodes   <- factor(as.character(out$Nodes), levels = node_levels)
+      out
+    }) %>% bind_rows()
+  }
+  
+  pts_z <- build_pts(tanh_bt = FALSE)  # Fisher-z (model-native) scale
+  pts_r <- build_pts(tanh_bt = TRUE)   # r (tanh-back-transformed) scale
+  
+  # Shared panel-builder: one scale's worth of data in, one facetted (A, K)
+  # ggplot out. Colour pair, y-axis label, subtitle and delta-label prefix are
+  # all parameterised so the z- and r-scale calls below are the only place the
+  # two halves differ.
+  build_panel <- function(pts, line_cols, gap_fill, y_lab, subtitle, delta_prefix) {
+    
+    pts$outcome <- factor(pts$outcome, levels = unname(OUTCOME_LABELS))
+    pts$Mnum    <- as.integer(as.character(pts$Regimes))
+    
+    n4 <- pts %>% filter(Nodes == "4") %>% select(outcome, Mnum, N4 = value)
+    n8 <- pts %>% filter(Nodes == "8") %>% select(outcome, Mnum, N8 = value)
+    wide <- left_join(n4, n8, by = c("outcome", "Mnum")) %>%
+      mutate(lo = pmin(N4, N8), hi = pmax(N4, N8),
+             # Clamp near-zero deltas to exactly 0 (avoids a stray "-0.00").
+             delta  = ifelse(abs(N4 - N8) < 0.005, 0, N4 - N8),
+             dlabel = sprintf("%s = %.2f", delta_prefix, delta))
+    
+    reg_breaks <- sort(unique(pts$Mnum))
+    
+    ggplot(pts, aes(x = Mnum, y = value)) +
+      geom_ribbon(data = wide, inherit.aes = FALSE,
+                  aes(x = Mnum, ymin = lo, ymax = hi),
+                  fill = gap_fill, alpha = 0.18) +
+      geom_line(aes(color = Nodes, group = Nodes),
+                linewidth = THESIS_LINEWIDTH, alpha = THESIS_LINE_ALPHA,
+                lineend = "round") +
+      geom_point(aes(fill = Nodes), shape = 21, alpha = THESIS_POINT_ALPHA,
+                 size = THESIS_POINT_SIZE, color = "white", stroke = THESIS_POINT_STROKE) +
+      # geom_text(data = wide, inherit.aes = FALSE,
+      #           aes(x = Mnum, y = hi, label = dlabel),
+      #           vjust = -1, fontface = "italic", size = 5, color = "grey30") +
+      # Fixed (shared) y-axis WITHIN this scale's two facets (A, K) -- ggplot's
+      # facet_wrap default -- so the A vs. K gap sizes stay directly
+      # comparable to each other on this scale. The z- and r-halves each get
+      # their own such fixed axis via being separate ggplot objects below.
+      facet_wrap(~ outcome, nrow = 1) +
+      scale_x_continuous(breaks = reg_breaks, labels = regime_labeller(reg_breaks),
+                         expand = expansion(mult = c(0.08, 0.08))) +
+      scale_color_manual(values = line_cols, labels = NODE_LABELS[c("4", "8")]) +
+      scale_fill_manual(values = line_cols, labels = NODE_LABELS[c("4", "8")]) +
+      scale_y_continuous(expand = expansion(mult = c(0.06, 0.16))) +
+      labs(
+        x        = "regime",
+        y        = y_lab,
+        color    = "nodes",
+        fill     = "nodes"
+      ) +
+      theme_thesis(base_size = 20) +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1),
+            legend.title = element_text(margin = margin(r = 12)))
+  }
+  
+  # r-scale colours: UNCHANGED from the original single-scale figure (mako
+  # blue/teal, via the shared NODES_COLORS palette: "4" and "6" hues).
+  r_line_cols <- c("4" = unname(NODES_COLORS[["4"]]),
+                   "8" = unname(NODES_COLORS[["6"]]))
+  r_gap_fill  <- unname(NODES_COLORS[["4"]])
+  
+  # z-scale colours: a separate pink/rose pair, deliberately NOT reusing any
+  # hue from NODES_COLORS or OUTCOME_COLORS, so the two scales are visually
+  # distinguishable at a glance even before reading axis labels, with no
+  # accidental colour overlap with Nodes elsewhere or the outcome hues in
+  # Figure 1.
+  z_line_cols <- c("4" = "#B3084C", "8" = "#F2789F")
+  z_gap_fill  <- "#B3084C"
+  
+  p_z <- build_panel(pts_z, z_line_cols, z_gap_fill,
+                     y_lab        = "pred. corr. (Fisher-z)",
+                     delta_prefix = "\u0394z")
+  
+  p_r <- build_panel(pts_r, r_line_cols, r_gap_fill,
+                     y_lab        = "pred. corr. (r-Scale)",
+                     delta_prefix = "\u0394r")
+  
+  # Shared title spanning the whole combined figure. A labs(title=) on p_z or
+  # p_r would only title THAT half -- cowplot has no native concept of one
+  # title over several combined plots, so it's built as its own tiny "plot"
+  # (draw_label on an empty canvas) and stacked above the z/r row.
+  title <- cowplot::ggdraw() +
+    cowplot::draw_label(
+      "Interaction of nodes and regimes",
+      fontface   = "bold",
+      size       = 24,
+      fontfamily = THESIS_FONT,
+      x = 0.5, hjust = 0.5
+    )
+  
+  plot_row <- cowplot::plot_grid(p_z, p_r, nrow = 1, rel_widths = c(1, 1))
+  
+  p <- cowplot::plot_grid(title, plot_row, ncol = 1, rel_heights = c(0.06, 1))
+  
   ggsave(plots_file("node_x_regimes.pdf"),
-         plot = p, device = cairo_pdf, width = 9, height = 5.5, dpi = 800)
+         plot = p, device = cairo_pdf, width = 15, height = 6.1, dpi = 1200)
   message("saved: ", plots_file("node_x_regimes.pdf"))
-
+  
   invisible(p)
 }
 
@@ -954,20 +1028,20 @@ make_density_nodes_regime_grid <- function(all_results, dat_sim) {
     facet_grid(outcome ~ Regimes,
                labeller = labeller(Regimes = regime_labeller)) +
     scale_x_continuous(breaks = dens_vals,
-                       labels = c("niedrig", "mittel", "hoch")) +
+                       labels = c("low", "mid", "high")) +
     scale_color_manual(values = fig4_node_cols, labels = NODE_LABELS[c("4", "8")]) +
     scale_fill_manual(values = fig4_node_cols, labels = NODE_LABELS[c("4", "8")]) +
     labs(
-      title = "Interaktion von Dichte, Node- und Regime-Anzahl",
-      x     = "Dichte",
-      y     = "Vorhergesagte Korrelationen",
-      color = "Nodes",
-      fill  = "Nodes"
+      title = "Interaction of density, nodes and regimes",
+      x     = "density",
+      y     = "predicted correlations",
+      color = "nodes",
+      fill  = "nodes"
     ) +
-    theme_thesis()
+    theme_thesis(base_size = 15)
 
   ggsave(plots_file("density_x_nodes_x_regimes.pdf"),
-         plot = p, device = cairo_pdf, width = 10, height = 8, dpi = 800)
+         plot = p, device = cairo_pdf, width = 10, height = 7.5, dpi = 1200)
   message("saved: ", plots_file("density_x_nodes_x_regimes.pdf"))
 
   invisible(p)
