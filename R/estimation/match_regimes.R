@@ -2,27 +2,27 @@
 #'
 #' Solves the regime label-switching problem by matching each estimated regime
 #' to a true regime via the globally optimal one-to-one assignment that
-#' maximises the correlation of the vectorised lag-1 Beta matrices. This is the
-#' single Beta-based mapping that is subsequently applied consistently to the
+#' maximises the correlation of the vectorised lag-1 A matrices. This is the
+#' single A-based mapping that is subsequently applied consistently to the
 #' per-regime raw-estimate table and to the regime-sequence / TPM relabelling.
 #'
 #' The matching is deterministic (no RNG) and intentionally lives on the
 #' estimation side: the matched permutation is needed to label both the
 #' per-regime table and the decoded regime sequence while the EM fit object is
 #' still in memory. It does NOT compute any scored outcome metric -- it only
-#' produces the permutation. (All scoring -- Beta_corr, Kappa_corr, sens/spec,
+#' produces the permutation. (All scoring -- A_corr, K_corr, sens/spec,
 #' NRMSE, AC correlations -- happens later in the analysis pipeline from the
 #' stored raw matrices.)
 #'
-#' \strong{Degenerate (zero-variance) estimated Betas.} A zero-variance
-#' estimated Beta makes its matching correlations undefined (\code{cor()} = NA),
+#' \strong{Degenerate (zero-variance) estimated As.} A zero-variance
+#' estimated A makes its matching correlations undefined (\code{cor()} = NA),
 #' so it cannot be placed by the assignment. Rather than dropping the WHOLE fit
 #' whenever ANY single regime is degenerate (which loses the healthy regimes'
 #' network-recovery rows too), the behaviour depends on how many regimes are
 #' degenerate:
 #' \itemize{
 #'   \item \strong{All M degenerate} -> \code{NULL} (fully failed fit, unchanged;
-#'     the caller logs \code{zero_var_beta} and drops the whole fit).
+#'     the caller logs \code{zero_var_A} and drops the whole fit).
 #'   \item \strong{Some but not all degenerate} (0 < |D| < M) -> a
 #'     \code{partial_regime_match} object: the \code{M - |D|} HEALTHY estimated
 #'     regimes are matched optimally to their best true regimes, and the true
@@ -33,16 +33,16 @@
 #'   \item \strong{None degenerate} (|D| = 0) -> the usual full M x M matching.
 #' }
 #'
-#' @param orig_Betas Named list of true lag-1 Beta matrices, one per regime,
+#' @param orig_As Named list of true lag-1 A matrices, one per regime,
 #'   in regime order (e.g. \code{Regime1}, ..., \code{RegimeM}).
-#' @param est_Betas Named list of estimated lag-1 Beta matrices, same length
-#'   and order as \code{orig_Betas}.
+#' @param est_As Named list of estimated lag-1 A matrices, same length
+#'   and order as \code{orig_As}.
 #'
 #' @return One of three things:
 #'   \describe{
 #'     \item{Full match}{A matrix as returned by \code{\link{assign_regimes}}
 #'       with columns \code{orig_Reg_No}, \code{est_Reg_No}, \code{Value} (one
-#'       row per true regime, ordered 1..M) -- when no estimated Beta is
+#'       row per true regime, ordered 1..M) -- when no estimated A is
 #'       degenerate.}
 #'     \item{Partial match}{An object of class \code{"partial_regime_match"}: a
 #'       list with \code{$assign} (the same 3-column matrix, one row per true
@@ -51,21 +51,21 @@
 #'       indices of the zero-variance estimated regimes), \code{$unmatched_true}
 #'       (integer indices of the true regimes left unassigned), \code{$n_regimes}
 #'       (M) and \code{$n_healthy} (M - |D|) -- when 0 < |D| < M.}
-#'     \item{\code{NULL}}{when EVERY estimated Beta is degenerate (|D| = M): the
+#'     \item{\code{NULL}}{when EVERY estimated A is degenerate (|D| = M): the
 #'       fit is fully unmatchable and dropped by the caller as before.}
 #'   }
 #'
 #' @seealso \code{\link{assign_regimes}} for the underlying Hungarian solver.
 #' @export
-match_regimes <- function(orig_Betas, est_Betas) {
+match_regimes <- function(orig_As, est_As) {
 
-  vecs_org <- lapply(orig_Betas, as.vector)
-  vecs_est <- lapply(est_Betas,  as.vector)
+  vecs_org <- lapply(orig_As, as.vector)
+  vecs_est <- lapply(est_As,  as.vector)
 
   M <- length(vecs_est)
 
-  # A zero-variance estimated Beta makes cor() undefined (NA). Identify the set D
-  # of degenerate estimated regimes (indices into est_Betas).
+  # A zero-variance estimated A makes cor() undefined (NA). Identify the set D
+  # of degenerate estimated regimes (indices into est_As).
   degenerate <- which(vapply(vecs_est, function(v) sd(v) == 0, logical(1)))
 
   # |D| == M: every regime degenerate -> fully unmatchable, unchanged behaviour.
@@ -112,7 +112,7 @@ match_regimes <- function(orig_Betas, est_Betas) {
   assign[, 1] <- seq_len(M)
   for (a in seq_along(healthy)) {
     true_b <- as.integer(assignment[a])       # true regime matched to healthy est a
-    assign[true_b, 2] <- healthy[a]           # estimated regime index (into est_Betas)
+    assign[true_b, 2] <- healthy[a]           # estimated regime index (into est_As)
     assign[true_b, 3] <- cor_results[a, true_b]
   }
   unmatched_true <- which(is.na(assign[, 2]))

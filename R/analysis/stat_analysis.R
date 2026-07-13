@@ -50,32 +50,32 @@ options(warn = 1)
 # These are the revisable scoring decisions the refactor was about:
 MIN_EDG_VAL    <- 0.05   # edge-detection threshold; must match the generation intent
 AC_HORIZON     <- 25     # T_ac for average_controllability(); MUST equal generation's default
-KAPPA_COND_MAX <- 1e6    # max condition number of est_Sigma before Kappa is flagged invalid
+K_COND_MAX <- 1e6    # max condition number of est_Sigma before K is flagged invalid
 
 # Outcome variables analysed throughout. Decided (test run 2026-06): Pearson is
 # the primary AC-recovery outcome. Spearman AC correlation is computed in
-# compute_recovery_metrics() (column Beta_ac_corr_spearman stays available on
+# compute_recovery_metrics() (column AC_corr_spearman stays available on
 # MSAR_dynamics_list/corr_results for ad-hoc robustness reporting) but is no
 # longer run through Fisher-z/LMM/exports/plots: at N=4 nodes Spearman's rho is
 # discretised onto a handful of values, so |rho|=1 occurs from discreteness
 # alone -- 18.1% of regime rows had |z|>5 vs. 1.5% for Pearson in the pilot run,
 # and R2_m was correspondingly worse (0.404 vs 0.560). Pearson AC correlation
-# now gets the same precision-weighting treatment as Kappa_corr (see
-# weight_BetaAC in transform.R / OUTCOME_WEIGHT_MAP in modeling.R), since it
+# now gets the same precision-weighting treatment as K_corr (see
+# weight_AC in transform.R / OUTCOME_WEIGHT_MAP in modeling.R), since it
 # inherits the analogous low-n artifact (n = Nodes instead of n_nz).
-corr_cols <- c("Beta_corr", "Kappa_corr", "Beta_ac_corr_pearson")
+corr_cols <- c("A_corr", "K_corr", "AC_corr_pearson")
 
 # -----------------------------------------------------------------------------
 # PIPELINE
 # -----------------------------------------------------------------------------
 
-# PART 1.0: Score the raw estimates -- edge threshold, Kappa = solve(Sigma) +
+# PART 1.0: Score the raw estimates -- edge threshold, K = solve(Sigma) +
 # condition-number validity gate, correlations, sens/spec, NRMSE, AC corrs.
 MSAR_dynamics_list <- compute_recovery_metrics(
   MSAR_dynamics_list,
   min_edg_val    = MIN_EDG_VAL,
   AC_HORIZON     = AC_HORIZON,
-  KAPPA_COND_MAX = KAPPA_COND_MAX
+  K_COND_MAX = K_COND_MAX
 )
 sigma_validity <- summarize_sigma_validity(MSAR_dynamics_list)
 

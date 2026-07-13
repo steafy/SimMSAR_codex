@@ -35,10 +35,10 @@
 #'   Each regime_dynamics list contains:
 #'   \itemize{
 #'     \item mu: Mean vector
-#'     \item Beta: Autoregressive coefficient matrix (temporal network)
+#'     \item A: Autoregressive coefficient matrix (temporal network)
 #'     \item sigma: Residual covariance matrix
-#'     \item kappa: Precision matrix (contemporaneous network)
-#'     \item Beta_ac: Average controllability for Beta
+#'     \item K: Precision matrix (contemporaneous network)
+#'     \item AC: Average controllability for A
 #'   }
 #'
 #' @param workers Integer. Number of parallel worker processes (via
@@ -60,7 +60,7 @@
 #'    \itemize{
 #'      \item Initial state sampled from uniform(0, 5)
 #'      \item Regime transitions follow a Markov process via transition matrix
-#'      \item State evolution: X[t] = mu + Beta(X[t-1] - mu) + epsilon
+#'      \item State evolution: X[t] = mu + A(X[t-1] - mu) + epsilon
 #'      \item epsilon ~ MVN(0, sigma) of the regime active at step t
 #'    }
 #'
@@ -129,7 +129,7 @@ source("R/generation/generate_transmat.R")
 # -----------------------------------------------------------------------------
 # NOTE on worker packages: unlike estimate_MSAR (EM + LASSO needs the heavy
 # stat/LASSO stack), the entire generation path is pure base/stats R --
-# generate_netdyn/Beta/kappa/random, check_stability, average_controllability,
+# generate_netdyn/A/K/random, check_stability, average_controllability,
 # generate_transmat, and the simulation use only matrix(), runif(), rnorm(),
 # eigen(), solve(), chol(), sample.int(). The worker functions are auto-exported
 # by future's globals detection, so generation workers deliberately load NO
@@ -176,10 +176,10 @@ simulate_one_series <- function(dynamics, transmat, chol_sigma, N_j, M_k, totTim
     Rseq[m - 1]  <- reg_index
 
     curreg_mu   <- dynamics[[reg_index]][["mu"]]
-    curreg_Beta <- dynamics[[reg_index]][["Beta"]]
+    curreg_A <- dynamics[[reg_index]][["A"]]
     eps         <- crossprod(chol_sigma[[reg_index]], rnorm(N_j))  # t(R) %*% z ~ MVN(0, Sigma)
 
-    X[m, ] <- curreg_mu + curreg_Beta %*% (X[m - 1, ] - curreg_mu) + eps
+    X[m, ] <- curreg_mu + curreg_A %*% (X[m - 1, ] - curreg_mu) + eps
   }
 
   list(timeseries_data = X[-seq_len(warmup), , drop = FALSE], regime_sequence = Rseq)
@@ -205,11 +205,11 @@ generate_one_cell <- function(cell, T, totTime, n_T, n_D, n_N, n_M, n_ts,
     repeat {
       attempts <- attempts + 1
       W <- generate_netdyn(N_j, D_i, min_edg_val, max_edg_val)
-      kappa_offdiag <- W[["kappa"]][lower.tri(W[["kappa"]], diag = FALSE)]
-      if (isTRUE(W[["Beta_stability"]]) &&
-          all(abs(W[["Beta"]][W[["Beta"]] != 0]) >= min_edg_val) &&
-          all(abs(kappa_offdiag[kappa_offdiag != 0]) >= min_edg_val) &&
-          any(kappa_offdiag != 0)) {
+      K_offdiag <- W[["K"]][lower.tri(W[["K"]], diag = FALSE)]
+      if (isTRUE(W[["A_stability"]]) &&
+          all(abs(W[["A"]][W[["A"]] != 0]) >= min_edg_val) &&
+          all(abs(K_offdiag[K_offdiag != 0]) >= min_edg_val) &&
+          any(K_offdiag != 0)) {
         break
       }
       if (attempts >= max_attempts) {

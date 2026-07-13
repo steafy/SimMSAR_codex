@@ -91,12 +91,12 @@ export_comparison_table <- function(all_results, corr_cols) {
   # LaTeX-formatted outcome labels (fully written out for readability)
   # AC = average controllability; corr. = Pearson correlation with true matrix
   # Recovery-correlation symbols (subscript style; requires amsmath for \text).
-  # r_AC is the correlation of the (nodal) average controllability AC(Beta).
+  # r_AC is the correlation of the (nodal) average controllability AC(A).
   outcome_tex_labels <- c(
-    Beta_corr     = "$r_{\\text{Beta}}$",
-    Kappa_corr    = "$r_{\\text{Kappa}}$",
-    Beta_ac_corr_pearson  = "$r_{\\text{AC, Pearson}}$",
-    Beta_ac_corr_spearman = "$r_{\\text{AC, Spearman}}$"
+    A_corr     = "$r_{\\text{A}}$",
+    K_corr    = "$r_{\\text{K}}$",
+    AC_corr_pearson  = "$r_{\\text{AC, Pearson}}$",
+    AC_corr_spearman = "$r_{\\text{AC, Spearman}}$"
   )
 
   # Human-readable random-effects structure labels
@@ -132,7 +132,7 @@ export_comparison_table <- function(all_results, corr_cols) {
       Outcome       = outcome_tex_labels[[outcome]],
       RE_structure  = format_re(res$random_effects_formula),
       # Effective N actually entering the model (listwise-complete obs). With the
-      # Kappa condition-number guard this is smaller for Kappa-based outcomes.
+      # K condition-number guard this is smaller for K-based outcomes.
       N             = stats::nobs(res$primary_model),
       AIC_main      = round(AIC(res$main),             1),
       AIC_2way      = round(AIC(res$two_way),          1),

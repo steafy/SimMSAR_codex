@@ -190,7 +190,7 @@ function(data,theta,FB,verbose = FALSE)  {
       # cross-validated LASSO with correct WLS weights. glmnet needs >=2
       # predictors and some variation; guard degenerate cases.
       support <- integer(0)
-      beta_shrunk <- rep(0, d*order)
+      A_shrunk <- rep(0, d*order)
       ok <- FALSE
       if (ncol(Xj) >= 2 && sum(wj > 0) > 2 && stats::sd(yj[wj > 0]) > 0) {
         # Adaptive LASSO (Zou 2006): per-predictor penalty.factor = 1/|b_init|,
@@ -224,7 +224,7 @@ function(data,theta,FB,verbose = FALSE)  {
           # returns coefficients at that CV-chosen lambda (verified identical to
           # glmnet::coef.glmnet on the underlying fit). First row is the intercept.
           cf <- as.numeric(stats::coef(cvfit, s = lambda_s))[-1]
-          beta_shrunk <- cf
+          A_shrunk <- cf
           support <- which(abs(cf) > 1e-12)
           ok <- TRUE
         }
@@ -244,7 +244,7 @@ function(data,theta,FB,verbose = FALSE)  {
           A2.lasso[id,support] = t(Cxy_w) %*% solve(Cxx_w)
         } else {
           # use the shrunk glmnet coefficients directly
-          A2.lasso[id,support] = beta_shrunk[support]
+          A2.lasso[id,support] = A_shrunk[support]
         }
       }
     }

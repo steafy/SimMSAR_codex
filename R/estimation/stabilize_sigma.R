@@ -34,7 +34,7 @@
 #' }
 #'
 #' Both act on EVERY M-step (the ill-conditioning is present from iteration 1 and
-#' persists; it also feeds Beta's re-estimation via \code{S.th} in the reduct
+#' persists; it also feeds A's re-estimation via \code{S.th} in the reduct
 #' step), never only at convergence.
 #'
 #' @param S A \eqn{d \times d} covariance matrix (one regime).

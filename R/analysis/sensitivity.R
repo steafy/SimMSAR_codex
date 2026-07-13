@@ -69,7 +69,7 @@ run_sensitivity_analysis <- function(dat_sim, all_results, corr_cols, bias) {
       # Use the same precision weights as the primary model (OUTCOME_WEIGHT_MAP
       # is defined in modeling.R) so Full vs. Sensitivity stays an apples-to-
       # apples comparison; NULL (unweighted) for outcomes not in the map
-      # (currently only Beta_corr).
+      # (currently only A_corr).
       weight_col <- if (outcome %in% names(OUTCOME_WEIGHT_MAP)) OUTCOME_WEIGHT_MAP[[outcome]] else NULL
       # Normalized to mean 1 -- see modeling.R::fit_outcome_models() for why
       # (avoids inflating residual variance / destabilizing the optimizer).

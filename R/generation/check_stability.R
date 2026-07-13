@@ -28,7 +28,7 @@
 #' the companion matrix should be checked instead.
 #'
 #' @seealso
-#' \code{\link{generate_Beta}} which uses this function
+#' \code{\link{generate_A}} which uses this function
 #' \code{\link{generate_netdyn}} which reports stability
 #'
 #' @examples

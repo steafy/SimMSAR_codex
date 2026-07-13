@@ -77,7 +77,7 @@ retry_attempts <- 5           # Number of retry attempts if fitting fails
 # -----------------------------------------------------------------------------
 # LASSO / Penalization Parameters (first M-step of the EM algorithm)
 # -----------------------------------------------------------------------------
-# Control how the sparse network (Beta) is estimated in the first EM M-step.
+# Control how the sparse network (A) is estimated in the first EM M-step.
 # Background & validation: docs/MSTEP_LASSO_CV_PENALIZATION.md.
 #
 # Two engines are available:
@@ -89,7 +89,7 @@ retry_attempts <- 5           # Number of retry attempts if fitting fails
 #              observations. Produces a sparse network from the ESTIMATOR itself
 #              (before any threshold). To match/beat the legacy engine's recovery
 #              it MUST re-select the support every EM iteration (see below);
-#              with that on it recovers Beta/Kappa/Sigma as well or better AND
+#              with that on it recovers A/K/Sigma as well or better AND
 #              gives threshold-free sparsity, at ~5x the legacy runtime.
 #
 # DEFAULT below = the validated "cvglmnet + re-select + fast CV" configuration.
@@ -144,7 +144,7 @@ lasso_reselect_every <- 1      # Among re-selecting iterations, re-select every
 # Optional in-EM regularization of the regime-weighted residual covariance Sigma,
 # to stop it becoming pathologically ill-conditioned when a regime is assigned very
 # few effective observations (small postmix) relative to its d(d+1)/2 covariance
-# parameters -- the under-determination that produces exploding Kappa = solve(Sigma)
+# parameters -- the under-determination that produces exploding K = solve(Sigma)
 # estimates and outright fit failures. Diagnosis & validation:
 # docs/SIGMA_KAPPA_DEGENERACY_DIAGNOSIS.md. Applied on EVERY M-step; keeps Sigma
 # dense (never introduces zeros). Default "none" reproduces the previous behaviour.
@@ -160,7 +160,7 @@ sigma_stab       <- "floor"     # "none" (default) | "floor" (recommended) | "ri
 sigma_stab_floor <- 1e-2       # floor only: condition-number cap = 1/floor.
                                # 1e-3 -> cap 1000 (safe default: removes fit
                                # failures, converges reliably). 1e-2 -> cap 100
-                               # (tightest control / best NRMSE_Kappa, but can hit
+                               # (tightest control / best NRMSE_K, but can hit
                                # MaxIter benignly on borderline fits).
 
 sigma_stab_lambda <- 1e-2      # ridge only: relative ridge strength (fraction of
@@ -275,7 +275,7 @@ if (identical(sigma_stab, "floor")) {
 } else if (identical(sigma_stab, "ridge")) {
   cat(sprintf("Sigma stab:   ridge (lambda = %.1e of tr(Sigma)/d)\n", sigma_stab_lambda))
 } else {
-  cat("Sigma stab:   none (raw residual covariance; Kappa = solve(Sigma) unregularized)\n")
+  cat("Sigma stab:   none (raw residual covariance; K = solve(Sigma) unregularized)\n")
 }
 cat("═══════════════════════════════════════════════════════════════\n")
 cat("\n")

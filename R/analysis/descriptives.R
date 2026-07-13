@@ -103,13 +103,13 @@ descriptive_stats <- function(dat_sim, corr_cols, available_other_metrics,
   }
 
   # Order rows by outcome block (not by metric type): first the temporal
-  # network Beta (correlation, MAE, sensitivity, specificity), then the average
-  # controllability of Beta, then the contemporaneous network Kappa. Metrics not
+  # network A (correlation, MAE, sensitivity, specificity), then the average
+  # controllability of A, then the contemporaneous network K. Metrics not
   # listed keep their original order at the end.
   metric_order <- c(
-    "Beta_corr", "NRMSE_Beta", "Beta_sen", "Beta_spec",   # Beta block
-    "Beta_ac_corr_pearson", "Beta_ac_corr_spearman",      # AC(Beta) block (both variants)
-    "Kappa_corr", "NRMSE_Kappa", "Kappa_sen", "Kappa_spec",  # Kappa block
+    "A_corr", "NRMSE_A", "A_sen", "A_spec",   # A block
+    "AC_corr_pearson", "AC_corr_spearman",      # AC(A) block (both variants)
+    "K_corr", "NRMSE_K", "K_sen", "K_spec",  # K block
     "Seq_accuracy", "Seq_kappa"                              # regime-sequence recovery (RQ4)
   )
   descriptive_stats_table <- descriptive_stats_table[
@@ -131,8 +131,8 @@ descriptive_stats <- function(dat_sim, corr_cols, available_other_metrics,
   if (require("kableExtra", quietly = TRUE)) {
     
     # Keep N (the number of non-NA observations that actually entered each
-    # metric) in the exported table -- with the Kappa condition-number guard,
-    # this now differs across metrics (Kappa metrics have fewer valid obs).
+    # metric) in the exported table -- with the K condition-number guard,
+    # this now differs across metrics (K metrics have fewer valid obs).
     descriptive_stats_formatted <- descriptive_stats_table %>%
       select(Metric, Mean, TrimMean, SD, Median, Min, Max, Range, N) %>%
       mutate(across(c(Mean, TrimMean, SD, Median, Min, Max, Range), ~round(., 3)))
@@ -150,16 +150,16 @@ descriptive_stats <- function(dat_sim, corr_cols, available_other_metrics,
     # carry the network as a subscript. Applied only to the .tex export so
     # console and HTML keep the readable raw names. Requires \usepackage{amsmath}.
     tex_metric_labels <- c(
-      Beta_corr    = "$r_{\\boldsymbol{A}}$",
-      NRMSE_Beta   = "$\\text{NRMSE}_{\\boldsymbol{A}}$",
-      Beta_sen     = "$\\text{Sens}_{\\boldsymbol{A}}$",
-      Beta_spec    = "$\\text{Spec}_{\\boldsymbol{A}}$",
-      Beta_ac_corr_pearson  = "$r_{\\boldsymbol{ac}}$",
-      Beta_ac_corr_spearman = "$r_{\\boldsymbol{ac},\\,\\text{S}}$",
-      Kappa_corr   = "$r_{\\boldsymbol{K}}$",
-      NRMSE_Kappa  = "$\\text{NRMSE}_{\\boldsymbol{K}}$",
-      Kappa_sen    = "$\\text{Sens}_{\\boldsymbol{K}}$",
-      Kappa_spec   = "$\\text{Spec}_{\\boldsymbol{K}}$",
+      A_corr    = "$r_{\\boldsymbol{A}}$",
+      NRMSE_A   = "$\\text{NRMSE}_{\\boldsymbol{A}}$",
+      A_sen     = "$\\text{Sens}_{\\boldsymbol{A}}$",
+      A_spec    = "$\\text{Spec}_{\\boldsymbol{A}}$",
+      AC_corr_pearson  = "$r_{\\boldsymbol{ac}}$",
+      AC_corr_spearman = "$r_{\\boldsymbol{ac},\\,\\text{S}}$",
+      K_corr   = "$r_{\\boldsymbol{K}}$",
+      NRMSE_K  = "$\\text{NRMSE}_{\\boldsymbol{K}}$",
+      K_sen    = "$\\text{Sens}_{\\boldsymbol{K}}$",
+      K_spec   = "$\\text{Spec}_{\\boldsymbol{K}}$",
       Seq_accuracy = "$\\text{Acc}$",
       Seq_kappa    = "$\\kappa$"
     )

@@ -5,7 +5,7 @@
 #' together with the regime matching / sequence reconstruction that has to happen
 #' while the EM fit object is still in memory. It deliberately does NOT compute
 #' any derived outcome metric (correlations, NRMSE, sensitivity/specificity,
-#' Kappa inversion, average controllability, regime-sequence accuracy): all of
+#' K inversion, average controllability, regime-sequence accuracy): all of
 #' that now lives in the analysis pipeline (\code{R/analysis/}) and is computed
 #' from the stored matrices, so every scoring decision is revisable without
 #' re-running this expensive step.
@@ -23,8 +23,8 @@
 #' @param min_edg_val Numeric. Retained for call-site compatibility but
 #'   \strong{no longer used here}: edge thresholding is a scoring decision and
 #'   now lives in the analysis pipeline (\code{compute_recovery_metrics()}),
-#'   which applies the threshold to the stored raw \code{est_Beta} / inverted
-#'   \code{est_Kappa}. Pass the intended threshold there instead.
+#'   which applies the threshold to the stored raw \code{est_A} / inverted
+#'   \code{est_K}. Pass the intended threshold there instead.
 #' @param Timeseries_data Tibble. Output from \code{generate_timeseries} containing
 #'   simulated data and true dynamics in tibble format with list-columns.
 #' @param workers Integer. Number of parallel worker processes (via
@@ -50,20 +50,20 @@
 #'   successfully fitted time series} and only the raw quantities:
 #'   \describe{
 #'     \item{timesteps, density, nodes, regimes, ts_id, regime_id}{Condition / regime identifiers}
-#'     \item{orig_Beta, est_Beta}{True / estimated temporal network (raw, NOT thresholded)}
-#'     \item{orig_Kappa}{True contemporaneous precision matrix (pass-through from generation)}
+#'     \item{orig_A, est_A}{True / estimated temporal network (raw, NOT thresholded)}
+#'     \item{orig_K}{True contemporaneous precision matrix (pass-through from generation)}
 #'     \item{orig_Sigma, est_Sigma}{True / estimated residual covariance. \code{est_Sigma}
 #'       is stored as-is, however well- or ill-conditioned; it is NOT inverted here.}
-#'     \item{orig_Beta_ac}{True Beta average controllability (pass-through from generation)}
+#'     \item{orig_AC}{True A average controllability (pass-through from generation)}
 #'   }
-#'   \code{est_Kappa}, \code{est_Beta_ac} and all derived metrics are produced
+#'   \code{est_K}, \code{est_AC} and all derived metrics are produced
 #'   downstream in analysis, not here.
 #'
 #'   A fit-level table (one row per \code{ts_id}/condition, NOT per regime) is
 #'   attached via \code{attr(result, "fit_results")} with columns
 #'   \code{timesteps, density, nodes, regimes, ts_id, orig_TPM, est_TPM,
 #'   orig_regime_sequence, est_regime_sequence}. The estimated TPM and sequence
-#'   are relabelled with the same Beta-based matching permutation as the
+#'   are relabelled with the same A-based matching permutation as the
 #'   per-regime table, so regime \code{m} means the same thing across all stored
 #'   objects. \code{(density, nodes, regimes, ts_id)} uniquely identifies the
 #'   reused generating parameter set, so analysis can build the random-effects
@@ -76,7 +76,7 @@
 #' @details
 #' Per time series: (1) fit via \code{init_and_fit_msar_lasso} (EM + LASSO, with
 #' its own retry logic, unchanged); (2) match estimated regimes to true regimes
-#' (Hungarian algorithm on vectorised Beta correlations, \code{\link{match_regimes}});
+#' (Hungarian algorithm on vectorised A correlations, \code{\link{match_regimes}});
 #' (3) hard-decode the smoothed probabilities into a regime sequence and relabel
 #' it with the matching permutation (\code{\link{reconstruct_regime_sequence}});
 #' (4) store the raw matrices. No edge thresholding, no covariance inversion, no
@@ -163,9 +163,9 @@ empty_regime_rows_schema <- function() {
   tibble::tibble(
     timesteps = integer(0), density = numeric(0), nodes = integer(0),
     regimes = integer(0), ts_id = integer(0), regime_id = integer(0),
-    orig_Beta = list(), est_Beta = list(), orig_Kappa = list(),
-    orig_Sigma = list(), est_Sigma = list(), orig_Beta_ac = list(),
-    # --- Sigma/Kappa degeneracy diagnostics (uncommitted; see
+    orig_A = list(), est_A = list(), orig_K = list(),
+    orig_Sigma = list(), est_Sigma = list(), orig_AC = list(),
+    # --- Sigma/K degeneracy diagnostics (uncommitted; see
     #     docs/SIGMA_KAPPA_DEGENERACY_DIAGNOSIS.md). Per (matched) regime:
     postmix           = numeric(0),  # effective obs count for this regime
     postmix_frac      = numeric(0),  # share of total effective obs (sum-to-1 over regimes of a fit)
@@ -329,46 +329,46 @@ fit_one_replicate <- function(cell, rep, order, MaxIter, verbose) {
   }
   
   # --- Raw estimates -----------------------------------------------------
-  est_Betas  <- model_fit[["theta"]][["A"]]      # list per regime, each $A1
+  est_As  <- model_fit[["theta"]][["A"]]      # list per regime, each $A1
   est_sigmas <- model_fit[["theta"]][["sigma"]]  # list per regime
   est_TPM    <- model_fit[["theta"]][["transmat"]]
   
-  est_Betas_mat <- setNames(
-    lapply(seq_len(cell$regimes_val), function(m) est_Betas[[m]][["A1"]]),
+  est_As_mat <- setNames(
+    lapply(seq_len(cell$regimes_val), function(m) est_As[[m]][["A1"]]),
     paste0("Regime", seq_len(cell$regimes_val))
   )
-  orig_Betas <- setNames(
-    lapply(seq_len(cell$regimes_val), function(m) current_regimes[[paste0("Regime", m)]][["Beta"]]),
+  orig_As <- setNames(
+    lapply(seq_len(cell$regimes_val), function(m) current_regimes[[paste0("Regime", m)]][["A"]]),
     paste0("Regime", seq_len(cell$regimes_val))
   )
   
-  # --- Regime matching (Hungarian on raw vectorised Beta) ----------------
+  # --- Regime matching (Hungarian on raw vectorised A) ----------------
   # Three possible returns (see match_regimes()):
-  #   * NULL                         -> every estimated Beta degenerate; whole
-  #                                     fit unmatchable (zero_var_beta, dropped).
+  #   * NULL                         -> every estimated A degenerate; whole
+  #                                     fit unmatchable (zero_var_A, dropped).
   #   * "partial_regime_match" object -> SOME (not all) estimated regimes
   #                                     degenerate; the healthy ones are matched
   #                                     and salvaged for RQ1-3, the affected true
   #                                     regime(s) left unmatched, and this fit is
   #                                     kept OUT of RQ4 (no fit-level row built).
   #   * plain 3-col matrix           -> full M x M match (unchanged path).
-  assigned_regimes <- match_regimes(orig_Betas, est_Betas_mat)
+  assigned_regimes <- match_regimes(orig_As, est_As_mat)
   if (is.null(assigned_regimes)) {
     return(list(regime_rows = NULL, fit_row = NULL,
-                failure = make_failure("zero_var_beta",
-                                       "estimated Beta has zero variance in ALL regimes")))
+                failure = make_failure("zero_var_A",
+                                       "estimated A has zero variance in ALL regimes")))
   }
   is_partial <- inherits(assigned_regimes, "partial_regime_match")
   # Unified per-true-regime assignment table (orig_Reg_No, est_Reg_No, Value);
   # est_Reg_No is NA for any true regime whose estimated counterpart is degenerate.
   assign_mat <- if (is_partial) assigned_regimes$assign else assigned_regimes
   
-  # --- Sigma/Kappa degeneracy diagnostics (uncommitted; see doc) ----------
+  # --- Sigma/K degeneracy diagnostics (uncommitted; see doc) ----------
   # Regime separation from the smoothed posterior (estimated-regime order), and
   # per-regime conditioning of the STORED est_Sigma. postmix[est_idx] is the
   # effective observation count that produced est_sigmas[[est_idx]]; the leading
   # hypothesis is that low postmix drives the near-singular / magnitude-degenerate
-  # Kappa. rcond/min-eig are computed on exactly the matrix that analysis inverts.
+  # K. rcond/min-eig are computed on exactly the matrix that analysis inverts.
   sep <- fit_separation_summary(model_fit[["smoothedprob"]],
                                 cell$regimes_val, cell$timesteps_val - 1L)
   postmix_vec  <- sep$postmix
@@ -391,22 +391,22 @@ fit_one_replicate <- function(cell, rep, order, MaxIter, verbose) {
 
     if (is.na(est_idx)) {
       # Unmatched true regime (partial match only): its best estimated
-      # counterpart was one of the degenerate zero-variance Betas, so no
+      # counterpart was one of the degenerate zero-variance As, so no
       # estimated quantity exists for it. Keep the GROUND-TRUTH orig_* (still
       # known -- preserves the row's design cell and true matrices) but set every
       # ESTIMATED field to NA/NULL. compute_recovery_metrics() detects the NULL
-      # est_Beta and NAs all derived outcomes for this row (reason
+      # est_A and NAs all derived outcomes for this row (reason
       # "unmatched_regime"), so no stale/mismatched estimate is ever scored.
       regime_rows[[m]] <- tibble::tibble(
         timesteps = cell$timesteps_val, density = cell$density_val,
         nodes     = cell$nodes_val,     regimes = cell$regimes_val,
         ts_id     = rep$l,              regime_id = orig_idx,
-        orig_Beta    = list(orig_reg[["Beta"]]),
-        est_Beta     = list(NULL),
-        orig_Kappa   = list(orig_reg[["kappa"]]),
+        orig_A    = list(orig_reg[["A"]]),
+        est_A     = list(NULL),
+        orig_K   = list(orig_reg[["K"]]),
         orig_Sigma   = list(orig_reg[["sigma"]]),
         est_Sigma    = list(NULL),
-        orig_Beta_ac = list(orig_reg[["Beta_ac"]]),
+        orig_AC = list(orig_reg[["AC"]]),
         postmix            = NA_real_,
         postmix_frac       = NA_real_,
         est_Sigma_rcond    = NA_real_,
@@ -422,12 +422,12 @@ fit_one_replicate <- function(cell, rep, order, MaxIter, verbose) {
       timesteps = cell$timesteps_val, density = cell$density_val,
       nodes     = cell$nodes_val,     regimes = cell$regimes_val,
       ts_id     = rep$l,              regime_id = orig_idx,
-      orig_Beta    = list(orig_reg[["Beta"]]),
-      est_Beta     = list(est_Betas_mat[[est_idx]]),
-      orig_Kappa   = list(orig_reg[["kappa"]]),
+      orig_A    = list(orig_reg[["A"]]),
+      est_A     = list(est_As_mat[[est_idx]]),
+      orig_K   = list(orig_reg[["K"]]),
       orig_Sigma   = list(orig_reg[["sigma"]]),
       est_Sigma    = list(est_S),
-      orig_Beta_ac = list(orig_reg[["Beta_ac"]]),
+      orig_AC = list(orig_reg[["AC"]]),
       postmix            = postmix_vec[est_idx],
       postmix_frac       = postmix_frac[est_idx],
       est_Sigma_rcond    = sig_rcond(est_S),
@@ -443,16 +443,16 @@ fit_one_replicate <- function(cell, rep, order, MaxIter, verbose) {
   # kappa, so we deliberately build NO fit-level row here. RQ4 defines its
   # missingness as (n_ts - number of fit_results rows) per design cell (see
   # run_sequence_sensitivity_analysis()), so returning fit_row = NULL keeps this
-  # fit EXCLUDED from RQ4 -- exactly as the old whole-fit zero_var_beta drop did
+  # fit EXCLUDED from RQ4 -- exactly as the old whole-fit zero_var_A drop did
   # -- while its healthy regime_rows still flow into the main table for RQ1-3.
-  # Logged with a distinct 'partial_zero_var_beta' stage so summarize_failures()
-  # (and the RQ4 by-stage attribution) can separate it from full zero_var_beta.
+  # Logged with a distinct 'partial_zero_var_A' stage so summarize_failures()
+  # (and the RQ4 by-stage attribution) can separate it from full zero_var_A.
   if (is_partial) {
     degen     <- assigned_regimes$degenerate_est
     unmatched <- assigned_regimes$unmatched_true
     partial_failure <- make_failure(
-      "partial_zero_var_beta",
-      sprintf(paste0("partial zero-variance Beta: %d of %d estimated regimes ",
+      "partial_zero_var_A",
+      sprintf(paste0("partial zero-variance A: %d of %d estimated regimes ",
                      "degenerate (est %s); true regime(s) %s left unmatched -- ",
                      "healthy regimes salvaged for RQ1-3, fit excluded from RQ4"),
               length(degen), cell$regimes_val,
@@ -497,11 +497,11 @@ fit_one_replicate <- function(cell, rep, order, MaxIter, verbose) {
       est_regime_sequence  = list(seq_mapped)
     )
   } else {
-    # NOTE: this is NOT a failure for Beta_corr/Kappa_corr/Beta_ac_corr_pearson --
+    # NOTE: this is NOT a failure for A_corr/K_corr/AC_corr_pearson --
     # regime_rows above is already built and is returned regardless of what
     # happens here. Only the RQ4 sequence row (fit_row) is unavailable for this
     # replicate. Logged via the same make_failure() mechanism as fit_null/
-    # zero_var_beta/no_data (previously this branch only printed a message()
+    # zero_var_A/no_data (previously this branch only printed a message()
     # and returned failure = NULL, so it was invisible to summarize_failures()
     # and to every downstream feasibility/sensitivity analysis -- this is what
     # produced the ~21% "extra", untracked missingness in RQ4 relative to the
@@ -702,18 +702,18 @@ estimate_MSAR <- function(Density, N, M, T, n_ts, order, MaxIter, verbose, min_e
 #' \code{stage} distinguishes \emph{where} the fit was dropped:
 #' \itemize{
 #'   \item \code{fit_null}: EM aborted on error/warning across all retries.
-#'   \item \code{zero_var_beta}: EVERY estimated Beta had zero variance, so regime
+#'   \item \code{zero_var_A}: EVERY estimated A had zero variance, so regime
 #'     matching was undefined for all regimes and the whole fit was discarded.
-#'   \item \code{partial_zero_var_beta}: SOME (but not all) estimated Betas had
+#'   \item \code{partial_zero_var_A}: SOME (but not all) estimated As had
 #'     zero variance. The healthy regimes were matched and their per-regime rows
-#'     ARE retained for RQ1-3 (so this does NOT reduce the Beta_corr/Kappa_corr/
-#'     Beta_ac sample); only the fit-level sequence row is withheld, so the fit is
-#'     excluded from RQ4 exactly as a full zero_var_beta drop would be. Logged for
+#'     ARE retained for RQ1-3 (so this does NOT reduce the A_corr/K_corr/
+#'     AC sample); only the fit-level sequence row is withheld, so the fit is
+#'     excluded from RQ4 exactly as a full zero_var_A drop would be. Logged for
 #'     transparency, not because the whole fit was dropped.
 #'   \item \code{no_data}: no simulated series matched the condition (lookup miss).
 #'   \item \code{seq_length_mismatch}: the EM fit and regime matching succeeded
-#'     (so this replicate's regime_rows -- and hence Beta_corr/Kappa_corr/
-#'     Beta_ac_corr_pearson -- are unaffected and already included), but the
+#'     (so this replicate's regime_rows -- and hence A_corr/K_corr/
+#'     AC_corr_pearson -- are unaffected and already included), but the
 #'     true and reconstructed regime sequences had different lengths, so the
 #'     fit-level sequence row needed for RQ4 could not be built. RQ4-specific
 #'     missingness only; does not reduce the sample for RQ1--RQ3.
@@ -736,7 +736,7 @@ summarize_failures <- function(msar_results,
     x <- tolower(ifelse(is.na(x), "", x))
     dplyr::case_when(
       grepl("seq length mismatch", x) ~ "RQ4 sequence-length mismatch (not a fit failure)",
-      grepl("partial zero-variance", x) ~ "partial degenerate Beta (healthy regimes salvaged for RQ1-3)",
+      grepl("partial zero-variance", x) ~ "partial degenerate A (healthy regimes salvaged for RQ1-3)",
       grepl("singular|rcond|cxx|det\\(|positive.?definite|chol", x) ~ "singular/ill-conditioned covariance",
       grepl("zero variance|zero-variance|sd", x) ~ "degenerate (zero-variance) estimate",
       grepl("nan|non-finite|infinite|\\binf\\b|missing value|na/nan", x) ~ "non-finite / NaN in likelihood",

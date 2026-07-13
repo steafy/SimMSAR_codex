@@ -16,7 +16,7 @@ source("R/utils/regime_sequence_recovery.R")   # cohens_kappa_manual()
 
 # Per-fit accuracy / Cohen's kappa + counts, restricted to regimes >= 2.
 # Predictors are z-scaled (logT, Density_s, Nodes_s) with Regimes as a factor,
-# matching the Beta/Kappa LMMs so coefficients are comparable across outcomes.
+# matching the A/K LMMs so coefficients are comparable across outcomes.
 prepare_sequence_results <- function(fit_results) {
 
   seq_df <- fit_results %>%
@@ -220,13 +220,13 @@ fit_sequence_recovery_model <- function(fit_results) {
 # correlation outcomes', so it is recomputed here rather than reusing
 # bias$high_fail_conditions (which is built from the corr-outcome failures only):
 #
-#   * For Beta_corr/Kappa_corr/Beta_ac the unit is a per-REGIME row (regime_rows);
-#     a fit is "missing" if estimation failed (fit_null / zero_var_beta / no_data).
+#   * For A_corr/K_corr/AC the unit is a per-REGIME row (regime_rows);
+#     a fit is "missing" if estimation failed (fit_null / zero_var_A / no_data).
 #   * For RQ4 the unit is a per-FIT row (fit_results), absent under ANY of those
 #     same estimation failures, under seq_length_mismatch (the EM fit + regime
 #     matching succeeded, but the true and reconstructed regime sequences had
 #     different lengths, so no fit-level sequence row could be built), AND under
-#     partial_zero_var_beta (SOME but not all estimated Betas were degenerate: the
+#     partial_zero_var_A (SOME but not all estimated As were degenerate: the
 #     healthy regimes are salvaged into the main table for RQ1-3, but no fit-level
 #     sequence row is built, so the fit is deliberately kept OUT of RQ4 -- a
 #     partial regime map cannot support a well-defined full-sequence kappa). Any
@@ -238,7 +238,7 @@ fit_sequence_recovery_model <- function(fit_results) {
 #     fit_results rows) per design cell, with no need to parse the failure log to
 #     DEFINE it. The log is used only to ATTRIBUTE that missingness by stage
 #     (printed below), which in particular makes the seq_length_mismatch and
-#     partial_zero_var_beta contributions explicit.
+#     partial_zero_var_A contributions explicit.
 #
 # Exclusion threshold (>10% per cell, fail_threshold) and the Full-vs-Sensitivity
 # coefficient comparison match sensitivity.R so the two slot together in the

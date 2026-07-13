@@ -13,15 +13,15 @@
 # -----------------------------------------------------------------------------
 # Precision-weighting lookup (single source of truth for modeling.R AND
 # sensitivity.R): which outcome uses which sim-level weight column from
-# aggregate_to_sim_level(). Kappa_corr is weighted by true non-zero edge count
-# (n_nz); Beta_ac_corr_pearson by Nodes (the analogous "n" for a correlation
+# aggregate_to_sim_level(). K_corr is weighted by true non-zero edge count
+# (n_nz); AC_corr_pearson by Nodes (the analogous "n" for a correlation
 # computed across nodes rather than edges) -- both correlations are mechanically
-# pulled toward |r|=1 at low n, regardless of estimation quality. Beta_corr is
+# pulled toward |r|=1 at low n, regardless of estimation quality. A_corr is
 # NOT weighted (see transform.R: the full N x N matrix gives it enough degrees
 # of freedom that this artifact doesn't bite). Outcomes not listed here are fit
 # unweighted.
 # -----------------------------------------------------------------------------
-OUTCOME_WEIGHT_MAP <- c(Kappa_corr = "w_Kappa", Beta_ac_corr_pearson = "w_BetaAC")
+OUTCOME_WEIGHT_MAP <- c(K_corr = "w_K", AC_corr_pearson = "w_AC")
 
 # -----------------------------------------------------------------------------
 # Helpers (remove the triplicated formula construction / fitting boilerplate)
@@ -51,13 +51,13 @@ fit_outcome_models <- function(outcome, dat_sim, weight_col = NULL) {
   outcome_z <- paste0(outcome, "_z")
 
   # Precision weights (see aggregate_to_sim_level()): NULL for outcomes
-  # without an analogous true-edge count (e.g. Beta_corr -- unweighted at
+  # without an analogous true-edge count (e.g. A_corr -- unweighted at
   # both the regime-aggregation and LMM level as of 2026-06-29, see
   # transform.R), in which case fit_lmer()'s weights=NULL default reproduces
   # the original unweighted fit. Normalized to mean 1: lmer's fixed-effect
   # estimates are invariant to a global rescaling of weights, but the
   # residual-variance scale (and hence ICC, R2_nakagawa) is NOT -- raw
-  # w_Kappa/w_BetaAC run into the hundreds for some rows, which inflated
+  # w_K/w_AC run into the hundreds for some rows, which inflated
   # residual variance ~30x and likely destabilized the optimizer (observed:
   # "negative eigenvalue" convergence warning).
   w <- if (!is.null(weight_col)) dat_sim[[weight_col]] / mean(dat_sim[[weight_col]]) else NULL

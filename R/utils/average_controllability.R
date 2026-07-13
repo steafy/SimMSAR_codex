@@ -8,7 +8,7 @@
 #' @param A Numeric square matrix. System matrix under the convention
 #'   \code{x_t = A x_{t-1}}, i.e. \code{A[i, j]} is the effect of node j at
 #'   time t-1 on node i at time t. For this project, A is the raw (unstandardized)
-#'   temporal Beta matrix; it is used as-is, without transposition.
+#'   temporal A matrix; it is used as-is, without transposition.
 #' @param T_ac Integer. Number of time steps over which controllability is
 #'   accumulated (t = 0, ..., T_ac - 1). Default: 25.
 #'

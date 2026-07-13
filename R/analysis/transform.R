@@ -48,34 +48,34 @@ aggregate_to_sim_level <- function(corr_results, corr_cols) {
   z_cols <- paste0(corr_cols, "_z")
   
   # Precision-weighting: outcomes computed from very few TRUE non-zero edges
-  # (n_nz_Kappa, added in prepare_corr_results()) have a Pearson r that is
+  # (n_nz_K, added in prepare_corr_results()) have a Pearson r that is
   # mechanically forced toward |r|=1, regardless of estimation quality.
   # Weight = pmax(n_nz - 3, 1), the standard Fisher-z sampling-variance weight
   # (Var(z) ~ 1/(n-3)), floored at 1 so n_nz in {2,3,4} doesn't go <=0.
   # Alternative if more differentiation at small n_nz is wanted: weight = n_nz.
   #
-  # Beta_ac_corr_pearson has the analogous artifact, but with a different
+  # AC_corr_pearson has the analogous artifact, but with a different
   # "n": it correlates the AC vector across Nodes (4/6/8), not across edges, so
   # its precision weight uses Nodes instead of n_nz. Decided 2026-06 after the
   # pilot run showed 1.5% |z|>5 for Pearson AC (vs. 18.1% for the now-dropped
   # Spearman variant -- discreteness at N=4 makes rank correlation collapse
   # onto a handful of values regardless of estimation quality).
   #
-  # Beta_corr is deliberately NOT weighted (was, until 2026-06-29; see git
+  # A_corr is deliberately NOT weighted (was, until 2026-06-29; see git
   # history). This now matches modeling.R's OUTCOME_WEIGHT_MAP, which already
-  # excluded Beta_corr from LMM-level weighting on the documented grounds that
+  # excluded A_corr from LMM-level weighting on the documented grounds that
   # the full N x N matrix gives it enough degrees of freedom -- but the
   # regime-level aggregation here used to weight it anyway, which was an
   # unresolved code/text inconsistency. Checked empirically (regime-level mean
-  # |Beta_corr_z| by Density x Nodes cell): the lowest-n_nz cell (Density=0.25,
+  # |A_corr_z| by Density x Nodes cell): the lowest-n_nz cell (Density=0.25,
   # Nodes=4, n_nz~4) had the LOWEST mean |z| in the design, not the highest --
   # the opposite of what the "few true edges forces r toward 1" mechanism
   # predicts. What the cross-tabulation actually shows is a real (if small,
   # see the I(Density_s^2) check in modeling.R) Density recovery effect, which
   # a precision weight would suppress/misrepresent rather than correctly
   # reflect. Both levels (LMM and regime-aggregation) are now unweighted for
-  # Beta_corr, not just one.
-  weighted_outcomes <- c(Kappa_corr = "weight_Kappa", Beta_ac_corr_pearson = "weight_BetaAC")
+  # A_corr, not just one.
+  weighted_outcomes <- c(K_corr = "weight_K", AC_corr_pearson = "weight_AC")
   weighted_z_cols   <- paste0(names(weighted_outcomes), "_z")
   
   # Convert factors to numeric for aggregation
@@ -85,17 +85,17 @@ aggregate_to_sim_level <- function(corr_results, corr_cols) {
       Density_num = as.numeric(as.character(Density)),
       Nodes_num = as.numeric(as.character(Nodes)),
       Regimes_num = as.numeric(as.character(Regimes)),
-      weight_Kappa  = pmax(n_nz_Kappa - 3, 1),
-      weight_BetaAC = pmax(Nodes_num - 3, 1)
+      weight_K  = pmax(n_nz_K - 3, 1),
+      weight_AC = pmax(Nodes_num - 3, 1)
     )
   
   # Aggregate: Mean across RegimeIndex for each SimUID
   # CORRELATIONS: aggregate ON THE RAW r-SCALE (precision-weighted for
-  # Beta_corr/Kappa_corr/Beta_ac_corr_pearson), THEN Fisher-z-transform the
+  # A_corr/K_corr/AC_corr_pearson), THEN Fisher-z-transform the
   # resulting per-simulation value ONCE. Any remaining z-outcome not in
   # weighted_outcomes keeps a simple mean of the already-computed _z column
   # (currently none are routed that way; kept for outcomes added later that
-  # are deliberately excluded from the weighting, e.g. Beta_ac_corr_spearman).
+  # are deliberately excluded from the weighting, e.g. AC_corr_spearman).
   #
   # CHANGED 2026-06-28 (was: weighted.mean on the _z columns directly, i.e.
   # transform-then-average). atanh(r) -> Inf as r -> 1, so with only 1-4
@@ -115,16 +115,16 @@ aggregate_to_sim_level <- function(corr_results, corr_cols) {
     group_by(SimUID, Condition, SimID,
              Timesteps_num, Density_num, Nodes_num, Regimes_num) %>%
     summarise(
-      # Beta_corr: unweighted mean on the raw scale, then atanh once -- same
+      # A_corr: unweighted mean on the raw scale, then atanh once -- same
       # "average-raw-first" principle as the weighted outcomes below (see the
       # 2026-06-28 fix note above this block), just without a precision
       # weight, per the rationale in the comment above weighted_outcomes.
-      Beta_corr_z            = safe_atanh(mean(Beta_corr, na.rm = TRUE)),
-      Kappa_corr_z           = safe_atanh(stats::weighted.mean(Kappa_corr,          w = weight_Kappa,  na.rm = TRUE)),
-      Beta_ac_corr_pearson_z = safe_atanh(stats::weighted.mean(Beta_ac_corr_pearson, w = weight_BetaAC, na.rm = TRUE)),
+      A_corr_z            = safe_atanh(mean(A_corr, na.rm = TRUE)),
+      K_corr_z           = safe_atanh(stats::weighted.mean(K_corr,          w = weight_K,  na.rm = TRUE)),
+      AC_corr_pearson_z = safe_atanh(stats::weighted.mean(AC_corr_pearson, w = weight_AC, na.rm = TRUE)),
       across(all_of(plain_z_cols), \(x) mean(x, na.rm = TRUE), .names = "{.col}"),
-      w_Kappa = sum(weight_Kappa[!is.na(Kappa_corr)], na.rm = TRUE),
-      w_BetaAC = sum(weight_BetaAC[!is.na(Beta_ac_corr_pearson)], na.rm = TRUE),
+      w_K = sum(weight_K[!is.na(K_corr)], na.rm = TRUE),
+      w_AC = sum(weight_AC[!is.na(AC_corr_pearson)], na.rm = TRUE),
       .groups = "drop"
     ) %>%
     rename(
@@ -135,9 +135,9 @@ aggregate_to_sim_level <- function(corr_results, corr_cols) {
     )
   
   # OTHER METRICS: Aggregate on original scale
-  other_metrics <- c("NRMSE_Beta", "NRMSE_Kappa",
-                     "Beta_sen", "Kappa_sen",
-                     "Beta_spec", "Kappa_spec")
+  other_metrics <- c("NRMSE_A", "NRMSE_K",
+                     "A_sen", "K_sen",
+                     "A_spec", "K_spec")
   
   available_other_metrics <- other_metrics[other_metrics %in% names(corr_results_for_agg)]
   

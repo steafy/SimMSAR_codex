@@ -123,13 +123,13 @@ NODE_SHAPES <- c("4" = 21, "6" = 24, "8" = 22)
 
 # --- Outcome palette + labels (third house palette, alongside Regime/Nodes) ---
 # The four recovery outcomes, renamed to the thesis's own matrix notation
-# (A = temporal Beta, K = contemporaneous Kappa) rather than the internal
+# (A = temporal A, K = contemporaneous K) rather than the internal
 # column names. Defined ONCE here and reused in every figure's legends/strips/
 # titles via OUTCOME_LABELS, so the naming can never drift between figures.
 OUTCOME_LABELS <- c(
-  Beta_corr            = "temporal (A)",
-  Kappa_corr           = "contemporaneous (K)",
-  Beta_ac_corr_pearson = "controllability",
+  A_corr            = "temporal (A)",
+  K_corr           = "contemporaneous (K)",
+  AC_corr_pearson = "controllability",
   RQ4                  = "regime sequence"
 )
 
@@ -267,10 +267,10 @@ make_line_plots <- function(corr_results, cols) {
 
     title <- switch(
       col_name,
-      "Beta_corr"           = "Estimation accuracy of temporal network (A)",
-      "Kappa_corr"           = "Estimation accuracy of contemporaneous Netzwerks (K)",
-      "Beta_ac_corr_pearson"  = "Estimation accuracy of average controllability (AC)",
-      "Beta_ac_corr_spearman" = "Estimation accuracy of average controllability (AC) (Spearman)"
+      "A_corr"           = "Estimation accuracy of temporal network (A)",
+      "K_corr"           = "Estimation accuracy of contemporaneous network (K)",
+      "AC_corr_pearson"  = "Estimation accuracy of average controllability (AC)",
+      "AC_corr_spearman" = "Estimation accuracy of average controllability (AC) (Spearman)"
     )
 
     # Median line + empirical IQR (25th-75th percentile) ribbon per Nodes group,
@@ -331,17 +331,10 @@ make_line_plots <- function(corr_results, cols) {
       ) +
     theme(aspect.ratio = 1)
 
-    # Output filenames use the thesis's own matrix notation (A/K/AC) instead of
-    # the internal column names, matching OUTCOME_LABELS above and the senspec
-    # plot filenames below.
-    file_prefix <- switch(
-      col_name,
-      "Beta_corr"              = "A_corr",
-      "Kappa_corr"             = "K_corr",
-      "Beta_ac_corr_pearson"   = "AC_corr",
-      "Beta_ac_corr_spearman"  = "AC_corr_spearman",
-      col_name
-    )
+    # The Pearson AC plot is the manuscript's canonical AC figure, so it is
+    # written as "AC_corr_plot.pdf" (dropping the _pearson suffix); every other
+    # outcome uses its column name directly.
+    file_prefix <- if (col_name == "AC_corr_pearson") "AC_corr" else col_name
     output_file <- plots_file(paste0(file_prefix, "_plot.pdf"))
 
     # cairo_pdf instead of the default pdf() device: the base device's font-
@@ -371,11 +364,11 @@ make_line_plots <- function(corr_results, cols) {
 # -----------------------------------------------------------------------------
 # Sens/Spec are reported descriptively (aggregated at simulation level, mean
 # across regimes, consistent with the rest of the aggregation), not modeled
-# via LMMs. One facet plot per network (Beta, Kappa), each showing both
+# via LMMs. One facet plot per network (A, K), each showing both
 # sensitivity and specificity (distinguished by linetype).
 make_senspec_plots <- function(corr_results) {
 
-  for (net in c("Beta", "Kappa")) {
+  for (net in c("A", "K")) {
 
     sen_col  <- paste0(net, "_sen")
     spec_col <- paste0(net, "_spec")
@@ -435,7 +428,7 @@ make_senspec_plots <- function(corr_results) {
       ) +
       labs(
         title    = paste0("Sensitivity & Specificity: ",
-                          if (net == "Beta") "temporal network (A)" else "contemporaneous network (K)"),
+                          if (net == "A") "temporal network (A)" else "contemporaneous network (K)"),
         x        = "time steps (T)",
         y        = "median value",
         color    = "nodes",
@@ -453,8 +446,7 @@ make_senspec_plots <- function(corr_results) {
     
 
     # Same A/K matrix-notation prefix as the line-plot filenames above.
-    net_prefix <- switch(net, "Beta" = "A", "Kappa" = "K")
-    output_file <- plots_file(paste0(net_prefix, "_senspec_plot.pdf"))
+    output_file <- plots_file(paste0(net, "_senspec_plot.pdf"))
 
     ggsave(
       filename = output_file,
@@ -521,7 +513,7 @@ get_averaged_main_effects <- function(all_results, seq_recovery, corr_cols) {
       estimate  = s[[paste0(v, ".trend")]],
       se        = s[["SE"]],
       df        = s[["df"]],          # wird bei asymptotic = Inf sein
-      statistic = s[["z.ratio"]],     # heißt bei df=Inf "z.ratio", nicht "t.ratio"
+      statistic = s[["z.ratio"]],     # at df=Inf emmeans labels this "z.ratio", not "t.ratio"
       ci_lo     = s[["asymp.LCL"]],
       ci_hi     = s[["asymp.UCL"]],
       p         = s[["p.value"]],
@@ -841,7 +833,7 @@ make_prediction_curves <- function(all_results, seq_recovery, dat_sim) {
 # -----------------------------------------------------------------------------
 # FIGURE 3: Nodes effect by Regime -- interaction profile (A and K only)
 # -----------------------------------------------------------------------------
-# For A (Beta_corr) and K (Kappa_corr), the predicted recovery at Nodes = 4 vs.
+# For A (A_corr) and K (K_corr), the predicted recovery at Nodes = 4 vs.
 # Nodes = 8 (holding logT = 0, Density_s = 0) is drawn as two profile lines
 # across the regimes with the between-Nodes gap shaded, on TWO scales side by
 # side in one 1x4 layout:
@@ -866,7 +858,7 @@ make_nodes_regime_profile <- function(all_results, dat_sim) {
   # Predictions on both scales, from the same predictor grid (Regimes x Nodes,
   # logT = Density_s = 0) -- only the tanh back-transform differs.
   build_pts <- function(tanh_bt) {
-    lapply(c("Beta_corr", "Kappa_corr"), function(oc) {
+    lapply(c("A_corr", "K_corr"), function(oc) {
       model <- all_results[[oc]]$primary_model
       lv    <- levels(model.frame(model)$Regimes)
       g <- expand.grid(Regimes = lv, Nodes = c(4, 8), stringsAsFactors = FALSE)
@@ -993,7 +985,7 @@ make_density_nodes_regime_grid <- function(all_results, dat_sim) {
   map_dens  <- .lin_map(dat_sim$Density, dat_sim$Density_s)
   map_nodes <- .lin_map(dat_sim$Nodes,   dat_sim$Nodes_s)
   dens_vals <- sort(unique(dat_sim$Density))
-  outcomes  <- c("Beta_corr", "Kappa_corr", "Beta_ac_corr_pearson")
+  outcomes  <- c("A_corr", "K_corr", "AC_corr_pearson")
 
   dat <- lapply(outcomes, function(oc) {
     model <- all_results[[oc]]$primary_model
@@ -1008,8 +1000,8 @@ make_density_nodes_regime_grid <- function(all_results, dat_sim) {
   }) %>% bind_rows()
 
   dat$outcome <- factor(dat$outcome,
-                        levels = unname(OUTCOME_LABELS[c("Beta_corr", "Kappa_corr",
-                                                         "Beta_ac_corr_pearson")]))
+                        levels = unname(OUTCOME_LABELS[c("A_corr", "K_corr",
+                                                         "AC_corr_pearson")]))
   dat$Regimes <- factor(as.character(dat$Regimes), levels = c("1", "2", "3", "4"))
 
   # Figure-4-specific Nodes colours (requested): the two warm hues from the
