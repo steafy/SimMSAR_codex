@@ -3,6 +3,12 @@
 # =============================================================================
 # Extracted from the former monolithic stat_analysis.R (PART 6).
 
+
+format_p_apa <- function(p) {
+  ifelse(p < 0.001,
+         "< .001",
+         sub("^0\\.", ".", sprintf("%.3f", p)))
+}
 # -----------------------------------------------------------------------------
 # 6.1: Coefficient tables for the primary models (HTML + LaTeX)
 # -----------------------------------------------------------------------------
@@ -40,6 +46,8 @@ export_coefficient_tables <- function(all_results, corr_cols) {
                           ifelse(coef_df$`p (BH-adj.)` < 0.01, "**",
                                  ifelse(coef_df$`p (BH-adj.)` < 0.05, "*", "")))
 
+    coef_df$`p (BH-adj.)` <- format_p_apa(coef_df$`p (BH-adj.)`)
+    
     # Final table: only adjusted p-values
     coef_df_export <- coef_df[, c("Predictor", "Estimate", "Std. Error", "df", "t value",
                                   "p (BH-adj.)", "sig")]
@@ -50,7 +58,7 @@ export_coefficient_tables <- function(all_results, corr_cols) {
     coef_df_export$Predictor <- gsub("_num\\b",   "",    coef_df_export$Predictor)
 
     # File names reflect actual primary model
-    file_base <- paste0("Results_", model_tag, "_", outcome, "_mixed")
+    file_base <- paste0("Results_", model_tag, "_", outcome)
 
     # Export to HTML
     kable(coef_df_export,
@@ -327,9 +335,11 @@ export_sequence_recovery_table <- function(seq_recovery) {
                         ifelse(coef_df$`p (BH-adj.)` < 0.01, "**",
                                ifelse(coef_df$`p (BH-adj.)` < 0.05, "*", "")))
 
+  coef_df$`p (BH-adj.)` <- format_p_apa(coef_df$`p (BH-adj.)`)
+  
   coef_df_export <- coef_df[, c("Predictor", "Estimate", "Std. Error", "df", "t value",
                                 "p (BH-adj.)", "sig")]
-
+  
   # Same predictor-name cleanup as export_coefficient_tables(): interaction
   # symbol, drop standardisation suffixes. Handles logT:Regimes3-style terms
   # from the interaction model too (":" -> " x ").
@@ -377,13 +387,14 @@ export_main_effects_table <- function(all_results, seq_recovery, corr_cols) {
     ) %>%
     arrange(outcome, term) %>%
     transmute(
-      Outcome  = outcome,
-      Term     = as.character(term),
-      Estimate = round(estimate, 3),
-      SE       = round(se, 3),
-      CI95     = sprintf("[%.3f, %.3f]", ci_lo, ci_hi),
-      p_adj    = round(p_adj, 3),
-      sig      = sig_star
+      Outcome   = outcome,
+      Term      = as.character(term),
+      Estimate  = round(estimate, 3),
+      df        = ifelse(is.infinite(df), "Inf", sprintf("%.1f", df)),
+      Statistic = round(statistic, 3),
+      CI95      = sprintf("[%.3f, %.3f]", ci_lo, ci_hi),
+      p_adj     = format_p_apa(p_adj),
+      sig       = sig_star
     )
   
   group_sizes <- table(tbl$Outcome)
@@ -396,7 +407,7 @@ export_main_effects_table <- function(all_results, seq_recovery, corr_cols) {
         digits    = 3,
         format    = "html",
         row.names = FALSE,
-        col.names = c("Term", "Estimate", "SE", "95%-KI", "p (BH-adj.)", "sig")) %>%
+        col.names = c("Term", "Estimate", "df", "t/z", "95%-KI", "p (BH-adj.)", "sig")) %>%
     kable_styling(bootstrap_options = c("striped", "hover")) %>%
     pack_rows(index = group_sizes) %>%
     save_kable(file = results_file("main_effects_averaged.html"))
@@ -407,7 +418,7 @@ export_main_effects_table <- function(all_results, seq_recovery, corr_cols) {
                      digits    = 3,
                      row.names = FALSE,
                      escape    = FALSE,
-                     col.names = c("Term", "Estimate", "SE", "95\\%-KI", "$p$ (BH-adj.)", "sig"),
+                     col.names = c("Term", "Estimate", "df", "$t$/$z$", "95\\%-KI", "$p$ (BH-adj.)", "sig"),
                      caption   = "Regime-gemittelte Haupteffekte (emtrends) und rohe Regime-Kontraste der prim\\\"aren LMMs.",
                      label     = "main_effects_averaged",
                      linesep   = "") %>%
@@ -415,13 +426,15 @@ export_main_effects_table <- function(all_results, seq_recovery, corr_cols) {
     pack_rows(index = group_sizes) %>%
     footnote(
       general = paste(
-        "logT, Density und Nodes sind \\\\emtrends\\\\-gemittelte Slopes",
-        "(gleichgewichtet über alle Stufen von Regimes); die Regimes-Kontraste",
-        "sind rohe Modellkoeffizienten (M = 1 als Referenz; mit * gekennzeichnete",
-        "RQ4-Kontraste relativ zu M = 2, da M = 1 dort ausgeschlossen ist). Die",
-        "BH-Korrektur bezieht sich nur auf die hier gezeigten Haupteffekt-Terme",
-        "je Outcome und ist daher nicht direkt mit den $p$-Werten der",
-        "vollst\\\"andigen Modelltabellen vergleichbar."
+        "logT, Density und Nodes sind gleichgewichtet über die Regimestufen",
+        "gemittelte Slopes (emtrends); für diese Zeilen sind df und Teststatistik",
+        "asymptotisch (df = Inf, z-Wert statt Satterthwaite-t). Die Regimes-Kontraste",
+        "(sowie Density/Nodes der Regimesequenz) sind rohe Modellkoeffizienten mit",
+        "Satterthwaite-t (M = 1 als Referenz; mit * gekennzeichnete RQ4-Kontraste",
+        "relativ zu M = 2, da M = 1 dort ausgeschlossen ist). Die BH-Korrektur",
+        "bezieht sich nur auf die hier gezeigten Haupteffekt-Terme je Outcome und",
+        "ist daher nicht direkt mit den $p$-Werten der vollst\\\"andigen",
+        "Modelltabellen vergleichbar."
       ),
       threeparttable = TRUE,
       escape = FALSE
