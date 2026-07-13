@@ -81,11 +81,7 @@ mstep_hh_reduct_msar <-
     A2 <- list()
     
     for (j in 1:M) {
-      #S = theta$sigma[[j]]
-      #Si = solve(S)
       A2[[j]] = list()
-      # Cxx = postmix[j]*op[,,j] - m[,j]%*%t(m[,j])
-      # Cxy = postmix[j]*op_1[,,j] - m[,j]%*%t(m_1[,j])
       Cxx = (postmix[j] * op[, , j] - m[, j] %*% t(m[, j])) / postmix[j]^2
       Cxy = (postmix[j] * op_1[, , j] - m[, j] %*% t(m_1[, j])) / postmix[j]^2
       Cyy = (postmix[j] * op_2[, , j] - m_1[, j] %*% t(m_1[, j])) / postmix[j]^2
@@ -111,10 +107,6 @@ mstep_hh_reduct_msar <-
         noti = if (length(wi) > 0) seq_len(d)[-wi] else seq_len(d)
         for (jd in 1:d) {
           cnt = cnt + 1
-
-          #
-          # patch: protect length 0 error
-
           if (length(wi) > 0)
           {
             A[cnt, lwi + (1:length(wi))] = Cxx[jd, wi]
@@ -138,24 +130,10 @@ mstep_hh_reduct_msar <-
         lwi = lwi + length(wi)
       }
       
-  #    tmp = (m_1[, j] - (A2.lasso) %*% m[, j]) / postmix[j]
-  #    tmp2 = Cyy + A2.lasso %*% Cxx %*% t(A2.lasso) - (A2.lasso %*% Cxy + t(A2.lasso %*% Cxy))
-  #    S2.lasso = Cyy - Cxy %*% A2.lasso - A2.lasso %*% Cxy + A2.lasso %*% Cxx %*%
-  #      t(A2.lasso)
-  #    ll1 = -sum(diag(S2.lasso %*% solve(tmp2)))
-  #    # print(paste("ll0 =",ll0, "ll1 =",ll1))
-      
-      # for (id in 1:d){
-      # w = which(theta$A[[j]][[1]][id,]!=0)
-      # Cxx_w = Cxx[w,w]
-      # Cxy_w = (Cxy)[w,id]
-      # A2.lasso[id,w] = t(Cxy_w)%*%solve(Cxx_w)
-      # }
       tmp = (m_1[, j] - (A2.lasso) %*% m[, j]) / postmix[j]
       tmp2 = Cyy + A2.lasso %*% Cxx %*% t(A2.lasso) - (A2.lasso %*% Cxy + t(A2.lasso %*% Cxy))
       A2[[j]][[1]] = A2.lasso
       
-#      browser()
       
       if (sigma.diag) {
         sigma[[j]] = diag(diag(tmp2[1:d, 1:d]), d)
@@ -163,7 +141,6 @@ mstep_hh_reduct_msar <-
         w = which(abs(theta$sigma[[j]]) > 0)
         sigma[[j]] = matrix(0, d, d)
         sigma[[j]][w] = tmp2[1:d, 1:d][w]
-        #sigma[[j]]=tmp2[1:d,1:d]
       }
 
       # Optional in-EM stabilization of the residual covariance (default OFF; see

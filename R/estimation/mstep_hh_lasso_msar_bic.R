@@ -31,7 +31,6 @@ function(data,theta,FB,verbose = FALSE)  {
       cpt =cpt+1
     }
   }
-  #browser()
   T = length(o:(dim(data)[1]-order+o))
   exp_num_trans = 0
   exp_num_visit = 0
@@ -146,7 +145,6 @@ function(data,theta,FB,verbose = FALSE)  {
     tmp2 = (op_2[, , j] + (A2.lasso) %*% op[, , j] %*% t(A2.lasso) - 
            ((A2.lasso) %*% t(op_1[, , j]) + t((A2.lasso) %*% t(op_1[, , j]))))/postmix[j] - 
            tmp %*% t(tmp)
-    #browser()
     theta.tmp = theta
     theta.tmp$A[[j]][[1]] = A2.lasso
     theta.tmp$sigma[[j]] = tmp2[1:d,1:d]

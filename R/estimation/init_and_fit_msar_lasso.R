@@ -12,7 +12,6 @@ init_and_fit_msar_lasso <-
            lambda_fuse_sigma = 0) {
     result <- list(fit = NULL, error = NULL)
     
-    # browser()
     
     for (try in 1:(retry + 1)) {
       if (try > 1) {
@@ -27,7 +26,6 @@ init_and_fit_msar_lasso <-
       # whole run. model_init is recomputed every loop iteration, so each
       # retry still gets a new random initialization.)
       result <- tryCatch({
-        # browser()
 
         # Initialize model for NHMSAR
         model_init <-

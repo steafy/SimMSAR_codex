@@ -14,7 +14,6 @@ function(
     data,theta,MaxIter=100,eps=1e-5,verbose=TRUE,
     covar.emis=NULL,covar.trans=NULL,method=NULL,constraints=FALSE,reduct=FALSE,K=NULL,d.y=NULL,ARfix=FALSE,penalty=FALSE,sigma.diag=FALSE,sigma.equal=FALSE,lambda1=.1,lambda2=.1,a=3.7,...
 ) { 
-  #browser()
   cl <- match.call()
   now <- Sys.time()
   if (missing(theta)) {
@@ -96,7 +95,6 @@ function(
       } 
       else if (penalty=="ridge")	{
         par = NHMSAR:::Mstep.hh.SCAD.cw.MSAR(data,theta,FB,penalty="ridge",lambda1=0,lambda2=lambda2,par=par)
-        #par = NHMSAR:::Mstep.hh.ridge.MSAR(data,theta,FB,lambda=lambda2)
       }
       else if (penalty=="LASSO")	{
 
@@ -138,16 +136,8 @@ function(
       }
       else if (penalty=="SCAD") {
         par = NHMSAR:::Mstep.hh.SCAD.MSAR(data,theta,FB,penalty="SCAD",lambda1=lambda1,lambda2=lambda2,par=par)
-      }    
-      #   		else if (penalty=="SIS") {
-      #   			par = NHMSAR:::Mstep.hh.SIS.MSAR#(data,theta,FB,penalty="SCAD",lambda1=lambda1,lambda2=lambda2,par=par)
-      #   		}
+      }
       else if (reduct) {
-        
-        # 
-        # call PATCHED !!!
-        #
-        
         par = mstep_hh_reduct_msar(data,theta,FB,sigma.diag=sigma.diag)
       }
       
@@ -219,7 +209,6 @@ function(
     
     
   }
-  #browser()
   if ( M>1) { 
     tr = NULL
     for (m in 1:M) {if (d==1) {tr[m] = theta$sigma[m]}
