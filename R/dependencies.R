@@ -1,233 +1,113 @@
 # =============================================================================
-# Dependency Management for SimMSAR Project
+# Dependency management for SimMSAR
 # =============================================================================
-# This file manages all package dependencies for the SimMSAR project.
-# Source this file at the beginning of your scripts to ensure all required
-# packages are available.
+# Source this file at the start of a session. It CHECKS that the required
+# packages are installed and, if any are missing, prints the exact install
+# command(s) and stops -- it never installs anything automatically.
 #
-# Usage:
-#   source("R/dependencies.R")
-#
-# To install missing packages:
-#   source("R/dependencies.R")
-#   install_missing_packages()
+#   source("R/dependencies.R")     # checks + loads, or stops with instructions
+#   print_package_summary()        # optional: per-package installed/version table
 # =============================================================================
 
-# Archived CRAN packages (no longer available via install.packages).
-# Installed from the CRAN archive .tar.gz via devtools::install_url().
+# Archived CRAN package: not installable via a plain install.packages(). NHMSAR
+# provides the MSAR EM machinery adapted under R/estimation/.
 ARCHIVED_PACKAGES <- c(
-  NHMSAR     = "https://cran.r-project.org/src/contrib/Archive/NHMSAR/NHMSAR_1.19.tar.gz",
-  netcontrol = "https://cran.r-project.org/src/contrib/Archive/netcontrol/netcontrol_0.1.tar.gz"
+  NHMSAR = "https://cran.r-project.org/src/contrib/Archive/NHMSAR/NHMSAR_1.19.tar.gz"
 )
 
-# Define all required packages by category (CRAN-available only)
+# CRAN packages actually used by the code (verified by usage, not guessed).
 PACKAGES <- list(
-  # Core MSAR functionality
-  core = c(
-    "huge"         # High-dimensional undirected graph estimation (nonparanormal)
-  ),
-
-  # Data manipulation
-  data = c(
-    "dplyr",       # Data manipulation and transformation
-    "Matrix"       # Sparse and dense matrix classes
-  ),
-
-  # Statistical modeling
-  stats = c(
-    "lme4",        # Linear mixed-effects models
-    "lmerTest",    # Tests for mixed models
-    "lmtest",      # Diagnostic tests for linear models
-    "lmPerm",      # Permutation tests for linear models
-    "dunn.test",   # Dunn's test for multiple comparisons
-    "effects",     # Effect displays for linear models
-    "sjPlot"       # Statistical plots and tables
-  ),
-
-  # Simulation and generation
-  simulation = c(
-    "graphicalVAR", # Graphical vector autoregression
-    "mvtnorm",      # Multivariate normal and t distributions
-    "abind"         # Combine multi-dimensional arrays
-  ),
-
-  # LASSO and regularization
-  regularization = c(
-    "lars",         # Least angle regression, lasso and forward stagewise
-    "prettyGraphs", # Graph visualization (for LASSO)
-    "glmnet",       # Lasso and elastic-net regularized GLMs (adaptive LASSO)
-    "glasso"        # Graphical lasso for precision matrix estimation
-  ),
-
-  # Visualization
-  visualization = c(
-    "ggplot2",      # Grammar of graphics plotting
-    "plotly",       # Interactive web-based graphs
-    "cowplot",      # Streamlined plot theme and plot annotations
-    "RColorBrewer"  # Color palettes for plots
-  ),
-
-  # Output and reporting
-  output = c(
-    "knitr",        # Dynamic report generation
-    "kableExtra",   # Construct complex tables with kable
-    "xtable"        # Export tables to LaTeX or HTML
-  ),
-
-  # Utilities
-  utilities = c(
-    "progress",     # Progress bars for loops
-    "clue",         # Cluster ensembles, Hungarian algorithm for assignment
-    "future",       # Unified parallel-execution backend (multisession etc.)
-    "future.apply", # apply-family functions (future_lapply) over future plans
-    "progressr"     # Cross-process progress reporting, future-aware
-  )
+  estimation  = c("glmnet", "lars"),                       # LASSO / lars M-steps
+  generation  = c("mvtnorm", "abind"),                     # residual draws, arrays
+  data        = c("dplyr", "tibble", "stringr"),           # wrangling
+  parallel    = c("future", "future.apply", "progressr"),  # parallel backend + progress
+  models      = c("lme4", "lmerTest", "emmeans",           # mixed models + contrasts
+                  "performance", "dunn.test"),
+  viz         = c("ggplot2", "cowplot", "viridisLite",     # plots
+                  "systemfonts"),
+  tables      = c("kableExtra", "xtable"),                 # LaTeX/HTML tables
+  utils       = c("clue")                                  # Hungarian assignment
 )
 
-# Flatten the list to get all packages (CRAN + archived)
+# Optional: enables rounded facet-card styling in the plots (GitHub-only). The
+# plotting code falls back gracefully if it is absent, so it is not required.
+#   remotes::install_github("teunbrand/elementalist")
+OPTIONAL_PACKAGES <- c("elementalist")
+
 ALL_PACKAGES <- c(names(ARCHIVED_PACKAGES), unlist(PACKAGES, use.names = FALSE))
 
+# Logical vector: is each required package installed?
 check_installed_packages <- function() {
-  installed <- ALL_PACKAGES %in% installed.packages()[, "Package"]
+  installed <- ALL_PACKAGES %in% rownames(installed.packages())
   names(installed) <- ALL_PACKAGES
-  return(installed)
+  installed
 }
 
-install_missing_packages <- function(packages = NULL,
-                                    repos = "https://cloud.r-project.org") {
-  if (is.null(packages)) {
-    packages <- ALL_PACKAGES
-  }
+# Check dependencies and STOP (with actionable instructions) if any are missing.
+# Never installs anything. Called automatically when this file is sourced.
+check_dependencies <- function() {
+  have <- rownames(installed.packages())
 
-  installed <- packages %in% installed.packages()[, "Package"]
-  missing <- packages[!installed]
+  missing_cran     <- setdiff(unlist(PACKAGES, use.names = FALSE), have)
+  missing_archived <- setdiff(names(ARCHIVED_PACKAGES), have)
 
-  if (length(missing) == 0) {
-    message("All required packages are already installed.")
+  if (length(missing_cran) == 0 && length(missing_archived) == 0) {
     return(invisible(TRUE))
   }
 
-  # Split into archived vs CRAN packages
-  missing_archived <- missing[missing %in% names(ARCHIVED_PACKAGES)]
-  missing_cran     <- missing[!missing %in% names(ARCHIVED_PACKAGES)]
+  msg <- c("Missing required packages -- install them and re-source, then retry.\n")
 
-  # Install CRAN packages
   if (length(missing_cran) > 0) {
-    message("Installing CRAN packages: ", paste(missing_cran, collapse = ", "))
-    install.packages(missing_cran, repos = repos)
+    msg <- c(msg, "\nCRAN packages:\n",
+             sprintf('  install.packages(c(%s))\n',
+                     paste(sprintf('"%s"', missing_cran), collapse = ", ")))
   }
 
-  # Install archived packages from CRAN archive .tar.gz via devtools
   if (length(missing_archived) > 0) {
-    if (!requireNamespace("devtools", quietly = TRUE)) {
-      message("Installing devtools (needed to rebuild archived packages)...")
-      install.packages("devtools", repos = repos)
-    }
-    for (pkg in missing_archived) {
-      url <- ARCHIVED_PACKAGES[[pkg]]
-      message("Installing archived package '", pkg, "' from ", url)
-      devtools::install_url(url)
-    }
+    urls <- ARCHIVED_PACKAGES[missing_archived]
+    msg <- c(msg,
+             "\nArchived CRAN package(s) -- NOT on the current CRAN, install from the archive:\n",
+             "  # install.packages('remotes')  # if needed\n",
+             paste0(sprintf('  remotes::install_url("%s")\n', urls), collapse = ""))
   }
 
-  # Verify installation
-  still_missing <- missing[!(missing %in% installed.packages()[, "Package"])]
-  if (length(still_missing) > 0) {
-    warning("Failed to install: ", paste(still_missing, collapse = ", "))
-    return(invisible(FALSE))
-  } else {
-    message("All packages installed successfully!")
-    return(invisible(TRUE))
-  }
+  stop(paste0(msg, collapse = ""), call. = FALSE)
 }
 
+# Attach all required packages (assumes check_dependencies() has passed).
 load_packages <- function(quietly = TRUE) {
-  message("Loading required packages...")
-
-  installed_pkgs <- installed.packages()[, "Package"]
-
-  loaded <- sapply(ALL_PACKAGES, function(pkg) {
-    if (!pkg %in% installed_pkgs) return(FALSE)
-    success <- suppressPackageStartupMessages(
-      requireNamespace(pkg, quietly = quietly)
-    )
-    if (success) {
-      library(pkg, character.only = TRUE, quietly = quietly)
-    }
-    return(success)
-  })
-
-  failed <- names(loaded)[!loaded]
-  if (length(failed) > 0) {
-    message("Not yet installed: ", paste(failed, collapse = ", "))
-    message("Run install_missing_packages() to install them.")
-  } else {
-    message("All packages loaded successfully!")
-  }
-
-  return(invisible(loaded))
+  invisible(lapply(ALL_PACKAGES, function(pkg) {
+    suppressPackageStartupMessages(library(pkg, character.only = TRUE, quietly = quietly))
+  }))
 }
 
+# Print a per-package installed/version table (optional diagnostic).
 print_package_summary <- function() {
-  cat("\n=== SimMSAR Package Dependencies ===\n\n")
-
-  # Show archived packages first
-  if (length(ARCHIVED_PACKAGES) > 0) {
-    cat(sprintf("%-20s (%d packages)\n", "Archived (CRAN):", length(ARCHIVED_PACKAGES)))
-    for (pkg in names(ARCHIVED_PACKAGES)) {
-      installed <- pkg %in% installed.packages()[, "Package"]
-      status <- if (installed) "\u2713" else "\u2717"
-      cat(sprintf("  %s %-20s", status, pkg))
-      if (installed) {
-        version <- as.character(packageVersion(pkg))
-        cat(sprintf(" (v%s)", version))
-      } else {
-        cat(" [NOT INSTALLED]")
-      }
-      cat("\n")
+  have <- rownames(installed.packages())
+  report_block <- function(title, pkgs) {
+    cat(sprintf("%-20s (%d packages)\n", title, length(pkgs)))
+    for (pkg in pkgs) {
+      installed <- pkg %in% have
+      status <- if (installed) "✓" else "✗"
+      cat(sprintf("  %s %-18s", status, pkg))
+      cat(if (installed) sprintf(" (v%s)\n", as.character(packageVersion(pkg))) else " [NOT INSTALLED]\n")
     }
     cat("\n")
   }
-
+  cat("\n=== SimMSAR package dependencies ===\n\n")
+  report_block("Archived (CRAN):", names(ARCHIVED_PACKAGES))
   for (category in names(PACKAGES)) {
-    cat(sprintf("%-20s (%d packages)\n",
-                paste0(toupper(substring(category, 1, 1)),
-                       substring(category, 2), ":"),
-                length(PACKAGES[[category]])))
-
-    for (pkg in PACKAGES[[category]]) {
-      installed <- pkg %in% installed.packages()[, "Package"]
-      status <- if (installed) "\u2713" else "\u2717"  # checkmark or X
-      cat(sprintf("  %s %-20s", status, pkg))
-
-      if (installed) {
-        version <- as.character(packageVersion(pkg))
-        cat(sprintf(" (v%s)", version))
-      } else {
-        cat(" [NOT INSTALLED]")
-      }
-      cat("\n")
-    }
-    cat("\n")
+    report_block(paste0(toupper(substring(category, 1, 1)), substring(category, 2), ":"),
+                 PACKAGES[[category]])
   }
-
-  installed_status <- check_installed_packages()
-  total <- length(installed_status)
-  n_installed <- sum(installed_status)
-
-  cat(sprintf("Total: %d/%d packages installed (%.1f%%)\n",
-              n_installed, total, 100 * n_installed / total))
-
-  invisible(data.frame(
-    package = ALL_PACKAGES,
-    installed = check_installed_packages(),
-    stringsAsFactors = FALSE
-  ))
+  report_block("Optional:", OPTIONAL_PACKAGES)
+  n_ok <- sum(check_installed_packages())
+  cat(sprintf("Total required: %d/%d installed.\n", n_ok, length(ALL_PACKAGES)))
+  invisible(data.frame(package = ALL_PACKAGES,
+                       installed = check_installed_packages(),
+                       row.names = NULL))
 }
 
-# =============================================================================
-# Auto-install and load packages when this file is sourced
-# =============================================================================
-
-install_missing_packages()
+# On source: verify dependencies (stops with instructions if missing), then load.
+check_dependencies()
 load_packages(quietly = TRUE)

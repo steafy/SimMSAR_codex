@@ -19,15 +19,18 @@
 # -----------------------------------------------------------------------------
 # SETUP: Load required packages
 # -----------------------------------------------------------------------------
-required_packages <- c("dplyr", "ggplot2", "kableExtra", "xtable", "lmtest", "sandwich",
+required_packages <- c("dplyr", "ggplot2", "kableExtra", "xtable",
                        "lme4", "lmerTest", "performance", "dunn.test", "cowplot")
 
-for (pkg in required_packages) {
-  if (!require(pkg, character.only = TRUE, quietly = TRUE)) {
-    install.packages(pkg, repos = "https://cloud.r-project.org")
-    library(pkg, character.only = TRUE)
-  }
+missing_pkgs <- required_packages[
+  !vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)]
+if (length(missing_pkgs) > 0) {
+  stop("Missing required packages: ", paste(missing_pkgs, collapse = ", "),
+       "\nInstall them and re-source:\n  install.packages(c(",
+       paste(sprintf('"%s"', missing_pkgs), collapse = ", "), "))",
+       call. = FALSE)
 }
+invisible(lapply(required_packages, library, character.only = TRUE))
 
 # -----------------------------------------------------------------------------
 # Load analysis modules
