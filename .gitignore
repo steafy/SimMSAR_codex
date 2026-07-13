@@ -36,6 +36,7 @@ output/*.rds
 !output/MSAR_models_final.rds
 !output/CONFIG_final.rds
 output/Timeseries_data_*.rds
+!output/Timeseries_data_final.rds
 output/sessionInfo_*.txt
 
 # NOTE: the final figures and tables are intentionally tracked -- do NOT add

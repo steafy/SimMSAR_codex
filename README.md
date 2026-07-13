@@ -196,11 +196,23 @@ particular replicates land where, not the design or the conclusions.
 
 ## Published dataset
 
-`output/MSAR_models_final.rds` (with `output/CONFIG_final.rds`) is the final run
-reported in the thesis: 21,591 of the 21,600 expected fits completed
-successfully. It is tracked via Git LFS. Load it and source
-`R/analysis/stat_analysis.R` to regenerate every table and figure under
-`output/`.
+The final run reported in the thesis is published under `output/`, tracked via
+Git LFS: 21,591 of the 21,600 expected fits completed successfully.
+
+- `output/MSAR_models_final.rds` — the raw estimates (one row per regime per
+  fit). This is all the analysis needs.
+- `output/Timeseries_data_final.rds` — the simulated series and true dynamics,
+  for re-running estimation from the exact same data.
+- `output/CONFIG_final.rds` — the run configuration (design grid, seed, LASSO
+  and EM settings).
+
+Load the models and source `R/analysis/stat_analysis.R` to regenerate every
+table and figure under `output/`:
+
+```r
+MSAR_dynamics_list <- readRDS("output/MSAR_models_final.rds")
+source("R/analysis/stat_analysis.R")
+```
 
 ## License & attribution
 

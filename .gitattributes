@@ -1,5 +1,5 @@
-# Track only the final published dataset via Git LFS (large binary .rds).
-# These two files are added manually after migrate_rds_names.R; every other
-# output/*.rds is gitignored.
+# Track the final published dataset via Git LFS. These files are added manually
+# after migrate_rds_names.R; every other output/*.rds is gitignored.
 output/MSAR_models_final.rds filter=lfs diff=lfs merge=lfs -text
+output/Timeseries_data_final.rds filter=lfs diff=lfs merge=lfs -text
 output/CONFIG_final.rds filter=lfs diff=lfs merge=lfs -text
